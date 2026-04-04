@@ -1,23 +1,30 @@
-name: KiroZozo English Publisher
+name: KiroZozo Auto Blogger (Groq Edition)
+
 on:
   schedule:
-    - cron: '0 10 * * *' # Every day at 10 AM UTC
-  workflow_dispatch: # Allows manual trigger from Actions tab
+    # سيتم التشغيل يومياً الساعة 10 صباحاً بتوقيت مكة/تركيا (07:00 UTC)
+    - cron: '0 7 * * *'
+  workflow_dispatch: # يتيح لك زر التشغيل اليدوي للتجربة الآن
 
 jobs:
-  publish_job:
+  build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Get Code
+      - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '20' # نسخة مستقرة وحديثة لعام 2026
 
-      - name: Install Libraries
-        run: npm install
+      - name: 📦 Install Required Libraries
+        # قمنا بإضافة groq-sdk بدلاً من مكتبة جوجل القديمة
+        run: |
+          npm init -y
+          npm install groq-sdk googleapis
 
-      - name: Run Script
+      - name: 🚀 Run Automation Script
+        # تشغيل ملف index.js الذي يحتوي على مفتاح Groq
         run: node index.js
