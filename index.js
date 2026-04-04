@@ -7,7 +7,7 @@ const CONFIG = {
     clientId: "872415365656-7qribadnc7k2u21kl6jjcbatdueevifh.apps.googleusercontent.com",
     clientSecret: "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",
     refreshToken: "1//04yti9k2agPknCgYIARAAGAQSNwF-L9IrTZPKt5Fqbg2vrM9sBtOks9cnY4M7Idg0LToQnlbYGME06k20vcyr_SVmYk1H_yZJdEc",
-    topics: ["Make Money Online 2026", "AI Side Hustles", "Passive Income Tech", "Future of Work"]
+    topics: ["Make Money Online 2026", "AI Side Hustles", "Future Tech Automation"]
 };
 
 const groq = new Groq({ apiKey: CONFIG.groqKey });
@@ -17,46 +17,59 @@ async function runGroqPublisher() {
     try {
         console.log("🔍 Step 1: Picking a topic (Llama 3.3)...");
         const topicRes = await groq.chat.completions.create({
-            messages: [{ role: "user", content: "Suggest one professional, high-traffic blog title about AI and technology. Return ONLY the title text, no quotes." }],
+            messages: [{ role: "user", content: "Suggest one short, high-traffic blog title about AI and making money. Return ONLY the title text." }],
             model: "llama-3.3-70b-versatile",
         });
-        const targetTitle = topicRes.choices[0].message.content.trim().replace(/["']/g, "");
+        const targetTitle = topicRes.choices[0].message.content.trim().replace(/[^a-zA-Z0-9 ]/g, "");
 
         console.log("✍️ Step 2: Writing a 1000-word article...");
         const contentRes = await groq.chat.completions.create({
-            messages: [{ role: "user", content: `Write a detailed, 1000-word SEO blog post in English about "${targetTitle}". Use HTML (h2, p, ul, li). Make it engaging. No markdown.` }],
+            messages: [{ role: "user", content: `Write a detailed 1000-word SEO blog post about "${targetTitle}". Use HTML (h2, p, ul, li). Make it engaging. No markdown blocks.` }],
             model: "llama-3.3-70b-versatile",
         });
         let articleBody = contentRes.choices[0].message.content.replace(/```html|```/g, "").trim();
 
-        console.log("🎨 Step 3: Generating AI Image Prompt...");
+        console.log("🎨 Step 3: Generating Blogger-Friendly Image Prompt...");
+        // نطلب من الذكاء الاصطناعي وصفاً قصيراً جداً ليقبله رابط بلوجر
         const promptRes = await groq.chat.completions.create({
-            messages: [{ role: "user", content: `Based on title: "${targetTitle}", write a highly detailed, cinematic, photorealistic image generation prompt. English only, no intro.` }],
+            messages: [{ role: "user", content: `Based on title: "${targetTitle}", write a VERY SHORT (max 5 words) visual description. English letters only.` }],
             model: "llama-3.3-70b-versatile",
         });
-        const imagePrompt = promptRes.choices[0].message.content.trim();
         
-        console.log("📸 Step 4: Generating Image URL & Waiting...");
-        const imageUrl = `https://pollinations.ai/p/${encodeURIComponent(imagePrompt)}?width=1200&height=630&model=flux&seed=${Math.floor(Math.random() * 9999)}`;
-        await sleep(15000); 
+        // تنظيف صارم للرابط: تحويل المسافات إلى شرطات (-) وحذف أي رموز
+        let rawPrompt = promptRes.choices[0].message.content.trim();
+        let cleanPrompt = rawPrompt.replace(/[^a-zA-Z0-9 ]/g, "").replace(/\s+/g, "-").toLowerCase();
+        
+        console.log("📸 Step 4: Formatting Direct Image Link...");
+        // هذا الرابط النظيف سيجبر بلوجر على التعرف على الصورة وحفظها
+        const imageUrl = `https://image.pollinations.ai/prompt/${cleanPrompt}-futuristic-8k`;
+        console.log(`🔗 Final Direct Image URL: ${imageUrl}`);
+        
+        await sleep(5000); 
 
-        // تنسيق احترافي جداً بألوان فاتحة ومريحة
+        // تنسيق HTML احترافي جداً بألوان فاتحة ومريحة للعين
         const finalHtml = `
-            <div dir="ltr" style="background-color: #f8fafd; padding: 25px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #2c3e50; line-height: 1.8; border-radius: 12px; border: 1px solid #e1e8ed;">
-                <h1 style="color: #1a73e8; text-align: center; margin-bottom: 20px; font-size: 28px;">${targetTitle}</h1>
-                <img src="${imageUrl}" style="width:100%; border-radius:12px; margin-bottom:25px; box-shadow: 0 8px 16px rgba(0,0,0,0.08);" alt="${targetTitle}">
-                <div style="background-color: #ffffff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.04);">
+            <div dir="ltr" style="background-color: #f4f7f6; padding: 30px; font-family: 'Segoe UI', Arial, sans-serif; color: #2c3e50; line-height: 1.8; border-radius: 12px;">
+                <h1 style="color: #2980b9; text-align: center; margin-bottom: 25px; font-size: 28px; font-weight: bold;">${targetTitle}</h1>
+                
+                <div style="text-align: center; margin-bottom: 30px;">
+                    <a href="${imageUrl}" target="_blank">
+                        <img src="${imageUrl}" style="max-width: 100%; height: auto; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.15);" alt="${targetTitle}">
+                    </a>
+                </div>
+                
+                <div style="background-color: #ffffff; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
                     <style>
-                        h2 { color: #0d47a1; border-bottom: 2px solid #e3f2fd; padding-bottom: 5px; margin-top: 25px;}
-                        h3 { color: #1976d2; margin-top: 20px; }
-                        p { font-size: 16px; color: #34495e; }
-                        ul { background-color: #f1f8e9; padding: 15px 35px; border-radius: 8px; border-left: 4px solid #7cb342; }
-                        li { margin-bottom: 8px; }
+                        h2 { color: #34495e; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px; margin-top: 30px; font-size: 22px;}
+                        h3 { color: #7f8c8d; font-size: 18px; margin-top: 20px;}
+                        p { font-size: 16px; color: #555555; margin-bottom: 15px; }
+                        ul { background-color: #fdfefe; padding: 20px 40px; border-radius: 8px; border-left: 5px solid #3498db; margin: 20px 0;}
+                        li { margin-bottom: 10px; font-size: 16px; color: #444444;}
                     </style>
                     ${articleBody}
                 </div>
-                <hr style="border: 0; height: 1px; background: #dce0e4; margin: 30px 0;">
-                <p style="text-align: center; color: #7f8c8d; font-style: italic; font-size: 14px;">Published by Kiro Zozo Automated Intelligence 2026</p>
+                <hr style="border: 0; height: 1px; background: #e0e0e0; margin: 30px 0;">
+                <p style="text-align: center; color: #bdc3c7; font-style: italic; font-size: 13px;">Crafted dynamically by Kiro Zozo AI Engine 2026</p>
             </div>
         `;
 
@@ -67,9 +80,9 @@ async function runGroqPublisher() {
 
         const response = await blogger.posts.insert({
             blogId: CONFIG.blogId,
-            requestBody: { title: targetTitle, content: finalHtml, labels: ["AI Tech", "Make Money"] }
+            requestBody: { title: targetTitle, content: finalHtml, labels: ["AI Tech", "Insights"] }
         });
-        console.log(`✅ Success! Published: ${response.data.url}`);
+        console.log(`✅ Success! Article live at: ${response.data.url}`);
     } catch (error) {
         console.error("❌ Error:", error.message);
     }
