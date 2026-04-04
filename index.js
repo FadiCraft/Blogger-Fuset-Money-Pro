@@ -3,7 +3,7 @@ const { google } = require("googleapis");
 
 // Configuration - Put your keys directly here
 const CONFIG = {
-    geminiKey: "AIzaSyBf8rI9d20giMwOaljK6LArGiqCZ661BKM",
+    geminiKey: "AIzaSyBfxlvNkS2Y2UnXp0MmXNmndJXai9hOD_s",
     blogId: "8249860422330426533",
     clientId: "872415365656-7qribadnc7k2u21kl6jjcbatdueevifh.apps.googleusercontent.com",
     clientSecret: "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",
