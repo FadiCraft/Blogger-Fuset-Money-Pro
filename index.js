@@ -1,9 +1,8 @@
 const Groq = require("groq-sdk");
-const { google } = require("googleapis");
+const { google } =require("googleapis");
 const axios = require("axios");
 const sharp = require("sharp");
 
-// =============== الإعدادات الثابتة ===============
 const CONFIG = {
     groqKey: "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",
     blogId: "8249860422330426533",
@@ -13,7 +12,6 @@ const CONFIG = {
     siteName: "TECH VANGUARD"
 };
 
-// تصنيفات ذكية مع كلمات مفتاحية
 const NICHES = [
     { id: "MONEY", label: "Financial Growth", key: "Income", links: ["https://www.investopedia.com/", "https://www.nerdwallet.com/"] },
     { id: "AI", label: "AI Revolution", key: "Intelligence", links: ["https://techcrunch.com/category/artificial-intelligence/", "https://www.wired.com/tag/ai/"] },
@@ -23,226 +21,385 @@ const NICHES = [
 
 const groq = new Groq({ apiKey: CONFIG.groqKey });
 
-// =============== دالة لتحميل الصورة من Pollinations ===============
 async function downloadImage(url) {
     const response = await axios.get(url, { responseType: "arraybuffer" });
     return Buffer.from(response.data, "binary");
 }
 
-// =============== دالة لإضافة النص على الصورة (بصمة فريدة) ===============
 async function addTextToImage(imageBuffer, titleText) {
-    // أبعاد الصورة (1200×630)
     const width = 1200;
     const height = 630;
     
-    // إنشاء طبقة نصية شفافة فوق الصورة
     const textOverlay = await sharp({
         text: {
             text: titleText,
             font: "Arial",
-            fontfile: "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", // مسار خط عام (في GitHub Actions قد يتوفر)
+            fontfile: "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
             rgba: true,
-            fontSize: 56,
+            fontSize: 52,
             fontweight: "bold",
-            width: width - 100,
+            width: width - 80,
             align: "center",
-            justify: true,
             color: "white",
-            background: "rgba(0,0,0,0.65)", // خلفية شفافة داكنة لتثبيت القراءة
+            background: "rgba(0,0,0,0.6)",
             gravity: "center"
         }
     }).png().toBuffer();
     
-    // دمج الصورة الأصلية مع النص
     const finalImage = await sharp(imageBuffer)
         .resize(width, height, { fit: "cover" })
         .composite([{ input: textOverlay, gravity: "center" }])
-        .jpeg({ quality: 85 })
+        .jpeg({ quality: 90 })
         .toBuffer();
     
     return finalImage;
 }
 
-// =============== الدالة الرئيسية ===============
 async function runGroqPublisher() {
     try {
-        // اختيار niche عشوائي
         const selectedNiche = NICHES[Math.floor(Math.random() * NICHES.length)];
-        console.log(`🚀 التصنيف المختار: ${selectedNiche.id}`);
+        console.log(`🚀 Selected: ${selectedNiche.id}`);
 
-        // 1. عنوان جذاب
+        // Generate title
         const titleRes = await groq.chat.completions.create({
-            messages: [{ role: "user", content: `Create a viral, high-authority English blog title for ${selectedNiche.label}. NO quotes.` }],
+            messages: [{ role: "user", content: `Create a viral, modern English blog title for ${selectedNiche.label}. Max 8 words. NO quotes.` }],
             model: "llama-3.3-70b-versatile",
         });
         const targetTitle = titleRes.choices[0].message.content.trim();
 
-        // 2. محتوى المقال (HTML نظيف)
+        // Generate content
         const contentRes = await groq.chat.completions.create({
-            messages: [{ role: "user", content: `Write a 1500-word SEO article in English for "${targetTitle}". 
-            Include: 
-            - Comprehensive Intro
-            - Table of Contents (as a list)
-            - Detailed H2 and H3 sections
-            - 'Expert Insights' box
-            - 2 external links from: ${selectedNiche.links.join(", ")}
-            - Conclusion with FAQ.
-            Use ONLY HTML tags. No markdown.` }],
+            messages: [{ role: "user", content: `Write a 2000-word modern SEO article for "${targetTitle}".
+            Style: Professional, engaging, easy to read.
+            Include:
+            - Powerful hook in intro
+            - Statistics or data points
+            - 3 major H2 sections with H3 subsections
+            - "Pro Tips" box (with 💡 emoji)
+            - 2 external authority links from: ${selectedNiche.links.join(", ")}
+            - FAQ section with 3 questions
+            - Strong conclusion with call-to-action
+            Use ONLY clean HTML tags. No markdown. No inline styles.` }],
             model: "llama-3.3-70b-versatile",
         });
         let articleBody = contentRes.choices[0].message.content.replace(/```html|```/g, "").trim();
 
-        // 3. وصف الصورة المرتبط بالمقال
+        // Generate image prompt
         const imgDescRes = await groq.chat.completions.create({
-            messages: [{ role: "user", content: `Describe a professional, high-quality 4k literal photo for: "${targetTitle}". No people if possible, focus on modern tech/money objects. 5 words max.` }],
+            messages: [{ role: "user", content: `Describe a stunning, modern, high-quality photo for: "${targetTitle}". Professional, clean, abstract or tech-related. 6 words max.` }],
             model: "llama-3.3-70b-versatile",
         });
         const imgPrompt = encodeURIComponent(imgDescRes.choices[0].message.content.trim());
-        const rawImageUrl = `https://image.pollinations.ai/prompt/${imgPrompt}-premium-corporate-style?width=1200&height=630&nologo=true`;
+        const rawImageUrl = `https://image.pollinations.ai/prompt/${imgPrompt}?width=1200&height=630&nologo=true`;
 
-        // 4. تحميل الصورة وإضافة النص عليها
-        console.log("📸 جاري تحميل الصورة الأصلية...");
+        // Process image
+        console.log("📸 Downloading image...");
         const imageBuffer = await downloadImage(rawImageUrl);
-        console.log("✍️ جاري إضافة عنوان المقال على الصورة...");
+        console.log("✍️ Adding title to image...");
         const finalImageBuffer = await addTextToImage(imageBuffer, targetTitle);
         const base64Image = finalImageBuffer.toString("base64");
-        const dataUrl = `data:image/jpeg;base64,${base64Image}`;
 
-        // 5. قالب HTML النهائي (ألوان ثابتة واضحة، متوافقة مع الوضع الليلي والفاتح)
-        const finalHtml = `
-        <!DOCTYPE html>
-        <html dir="ltr">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style>
-                /* نظام ألوان احترافي – لا عشوائية */
-                :root {
-                    --bg-body: #f8f9fa;
-                    --bg-card: #ffffff;
-                    --text-primary: #212529;
-                    --text-secondary: #495057;
-                    --accent: #0d6efd;
-                    --border: #dee2e6;
-                    --insight-bg: #e9ecef;
-                }
-                @media (prefers-color-scheme: dark) {
-                    :root {
-                        --bg-body: #121212;
-                        --bg-card: #1e1e2f;
-                        --text-primary: #f1f3f5;
-                        --text-secondary: #ced4da;
-                        --accent: #4dabf7;
-                        --border: #2c2c3a;
-                        --insight-bg: #2a2a3b;
-                    }
-                }
-
-                body {
-                    margin: 0;
-                    background: var(--bg-body);
-                    font-family: 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-                    line-height: 1.7;
-                }
-                .post-container {
-                    max-width: 850px;
-                    margin: 30px auto;
-                    background: var(--bg-card);
-                    border-radius: 24px;
-                    overflow: hidden;
-                    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-                    padding: 0 0 30px 0;
-                }
-                .featured-image {
-                    width: 100%;
-                    display: block;
-                }
-                .article-content {
-                    padding: 20px 30px;
-                }
-                h1 {
-                    font-size: 2.2rem;
-                    margin-top: 0;
-                    margin-bottom: 0.5rem;
-                    color: var(--text-primary);
-                }
-                h2 {
-                    font-size: 1.8rem;
-                    margin-top: 2rem;
-                    padding-bottom: 0.5rem;
-                    border-bottom: 3px solid var(--accent);
-                    color: var(--text-primary);
-                }
-                h3 {
-                    font-size: 1.4rem;
-                    margin-top: 1.5rem;
-                    color: var(--text-primary);
-                }
-                p, li {
-                    color: var(--text-secondary);
-                    font-size: 1.05rem;
-                }
-                .insight-box {
-                    background: var(--insight-bg);
-                    border-left: 5px solid var(--accent);
-                    padding: 1.2rem 1.8rem;
-                    border-radius: 16px;
-                    margin: 2rem 0;
-                }
-                a {
-                    color: var(--accent);
-                    text-decoration: none;
-                    font-weight: 500;
-                }
-                a:hover {
-                    text-decoration: underline;
-                }
-                .footer {
-                    text-align: center;
-                    font-size: 0.8rem;
-                    color: var(--text-secondary);
-                    border-top: 1px solid var(--border);
-                    margin-top: 3rem;
-                    padding-top: 1.5rem;
-                }
-                @media (max-width: 600px) {
-                    .article-content { padding: 15px; }
-                    h1 { font-size: 1.8rem; }
-                }
-            </style>
-            <script type="application/ld+json">
-            {
-                "@context": "https://schema.org",
-                "@type": "BlogPosting",
-                "headline": "${targetTitle.replace(/"/g, '\\"')}",
-                "image": "${dataUrl}",
-                "publisher": {
-                    "@type": "Organization",
-                    "name": "${CONFIG.siteName}"
-                }
+        // 🎨 MODERN PREMIUM HTML TEMPLATE
+        const finalHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="${targetTitle} - Expert insights and actionable strategies">
+    <title>${targetTitle}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', system-ui, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e9edf2 100%);
+            line-height: 1.6;
+        }
+        
+        /* Glass morphism card */
+        .article-wrapper {
+            max-width: 900px;
+            margin: 2rem auto;
+            background: rgba(255, 255, 255, 0.98);
+            border-radius: 32px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            overflow: hidden;
+            backdrop-filter: blur(0px);
+            transition: transform 0.3s ease;
+        }
+        
+        /* Hero section with gradient overlay */
+        .hero-section {
+            position: relative;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 3rem 2rem;
+            text-align: center;
+            color: white;
+        }
+        
+        .hero-image {
+            width: 100%;
+            max-height: 500px;
+            object-fit: cover;
+            display: block;
+        }
+        
+        .hero-overlay {
+            padding: 2rem;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.3), rgba(0,0,0,0.7));
+        }
+        
+        .category-badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            backdrop-filter: blur(10px);
+            padding: 0.4rem 1.2rem;
+            border-radius: 100px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 1.5rem;
+        }
+        
+        h1 {
+            font-size: 2.8rem;
+            font-weight: 800;
+            line-height: 1.2;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, #fff, #e0e0e0);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        /* Content area */
+        .content-area {
+            padding: 3rem;
+        }
+        
+        /* Typography */
+        h2 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-top: 2.5rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        h3 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-top: 1.8rem;
+            margin-bottom: 0.8rem;
+            color: #2d3748;
+        }
+        
+        p {
+            font-size: 1.1rem;
+            color: #4a5568;
+            margin-bottom: 1.2rem;
+        }
+        
+        /* Pro Tips Box - Modern design */
+        .pro-tip {
+            background: linear-gradient(135deg, #fef3c7 0%, #fffbeb 100%);
+            border-left: 5px solid #f59e0b;
+            padding: 1.5rem;
+            border-radius: 20px;
+            margin: 2rem 0;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        
+        .pro-tip strong {
+            color: #d97706;
+            font-size: 1.2rem;
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+        
+        /* FAQ Section - Collapsible modern */
+        .faq-item {
+            background: #f7fafc;
+            margin: 1rem 0;
+            border-radius: 16px;
+            overflow: hidden;
+            transition: all 0.3s;
+        }
+        
+        .faq-question {
+            padding: 1.2rem 1.5rem;
+            font-weight: 700;
+            cursor: pointer;
+            background: #edf2f7;
+            color: #2d3748;
+        }
+        
+        .faq-answer {
+            padding: 0 1.5rem 1.2rem 1.5rem;
+            color: #4a5568;
+        }
+        
+        /* Table of Contents */
+        .toc {
+            background: #f7fafc;
+            padding: 1.5rem;
+            border-radius: 20px;
+            margin: 2rem 0;
+        }
+        
+        .toc h3 {
+            margin-top: 0;
+        }
+        
+        .toc ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        
+        .toc li {
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        .toc a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+        
+        .toc a:hover {
+            color: #764ba2;
+        }
+        
+        /* External links styling */
+        .external-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 0.3rem 1rem;
+            border-radius: 100px;
+            text-decoration: none;
+            font-weight: 500;
+            margin: 0.2rem;
+            transition: transform 0.2s;
+        }
+        
+        .external-link:hover {
+            transform: translateY(-2px);
+        }
+        
+        /* Footer */
+        .footer {
+            background: linear-gradient(135deg, #1a202c 0%, #2d3748 100%);
+            color: white;
+            text-align: center;
+            padding: 2rem;
+            margin-top: 2rem;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .content-area {
+                padding: 1.5rem;
             }
-            </script>
-        </head>
-        <body>
-            <div class="post-container">
-                <img class="featured-image" src="${dataUrl}" alt="${targetTitle.replace(/"/g, '&quot;')}">
-                <div class="article-content">
-                    <div class="insight-box">
-                        ⚡ <strong>Quick Overview</strong><br>
-                        This exclusive report dives deep into <strong>${selectedNiche.label}</strong> – the #1 trend shaping 2026.
-                    </div>
-                    ${articleBody}
-                    <div class="footer">
-                        © 2026 ${CONFIG.siteName} – All rights reserved.<br>
-                        Published with AI precision.
-                    </div>
-                </div>
+            h1 {
+                font-size: 1.8rem;
+            }
+            h2 {
+                font-size: 1.5rem;
+            }
+        }
+        
+        /* Dark mode support */
+        @media (prefers-color-scheme: dark) {
+            body {
+                background: linear-gradient(135deg, #1a202c 0%, #2d3748 100%);
+            }
+            .article-wrapper {
+                background: #2d3748;
+            }
+            p, .faq-answer {
+                color: #cbd5e0;
+            }
+            h3 {
+                color: #e2e8f0;
+            }
+            .toc, .faq-item, .faq-question {
+                background: #4a5568;
+            }
+            .faq-question {
+                color: #f7fafc;
+            }
+        }
+    </style>
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "TechArticle",
+        "headline": "${targetTitle.replace(/"/g, '\\"')}",
+        "image": "data:image/jpeg;base64,${base64Image}",
+        "author": {
+            "@type": "Organization",
+            "name": "${CONFIG.siteName}"
+        },
+        "publisher": {
+            "@type": "Organization",
+            "name": "${CONFIG.siteName}",
+            "logo": {
+                "@type": "ImageObject",
+                "url": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEghost-logo.png"
+            }
+        }
+    }
+    </script>
+</head>
+<body>
+    <div class="article-wrapper">
+        <img src="data:image/jpeg;base64,${base64Image}" alt="${targetTitle}" class="hero-image">
+        
+        <div class="content-area">
+            <div class="category-badge">${selectedNiche.label} • 2026</div>
+            
+            ${articleBody}
+            
+            <div class="pro-tip">
+                <strong>💡 Pro Tip</strong>
+                <p>Bookmark this article and share it with colleagues who need to stay ahead in ${selectedNiche.label}. The strategies above are proven to deliver results.</p>
             </div>
-        </body>
-        </html>
-        `;
+        </div>
+        
+        <div class="footer">
+            <p>© 2026 ${CONFIG.siteName} — All rights reserved</p>
+            <p style="font-size: 0.8rem; margin-top: 0.5rem;">AI-powered insights for modern professionals</p>
+        </div>
+    </div>
+    
+    <script>
+        // Smooth scroll for TOC links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                document.querySelector(this.getAttribute('href')).scrollIntoView({
+                    behavior: 'smooth'
+                });
+            });
+        });
+    </script>
+</body>
+</html>`;
 
-        // 6. النشر على بلوجر
+        // Publish to Blogger
         const oauth2Client = new google.auth.OAuth2(CONFIG.clientId, CONFIG.clientSecret);
         oauth2Client.setCredentials({ refresh_token: CONFIG.refreshToken });
         const blogger = google.blogger({ version: "v3", auth: oauth2Client });
@@ -252,13 +409,16 @@ async function runGroqPublisher() {
             requestBody: {
                 title: targetTitle,
                 content: finalHtml,
-                labels: [selectedNiche.id, selectedNiche.key, "2026", "exclusive"]
+                labels: [selectedNiche.id, selectedNiche.key, "2026", "premium", "featured"]
             }
         });
-        console.log(`✅ تم النشر بنجاح! الرابط: ${response.data.url}`);
-        console.log(`🖼️ الصورة مضمنة بـ Base64 ولن تُحذف أبداً، وتحمل عنوان المقال كبصمة فريدة.`);
+        
+        console.log(`✅ Published! ${response.data.url}`);
+        console.log(`🎨 Modern design with glass morphism, gradients, and premium typography`);
+        console.log(`🖼️ Image has title watermark - unique fingerprint for Google Images`);
+        
     } catch (error) {
-        console.error("❌ فشل التشغيل:", error.message);
+        console.error("❌ Error:", error.message);
         if (error.response) console.error(error.response.data);
     }
 }
