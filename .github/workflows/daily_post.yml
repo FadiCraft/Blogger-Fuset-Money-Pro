@@ -1,0 +1,23 @@
+name: KiroZozo English Auto Post
+on:
+  schedule:
+    - cron: '0 10 * * *' # Works every day at 10:00 AM UTC
+  workflow_dispatch: # Allows you to run it manually from GitHub Actions tab
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Run Auto Publisher
+        run: node index.js
