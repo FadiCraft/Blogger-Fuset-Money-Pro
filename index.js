@@ -7,48 +7,69 @@ const CONFIG = {
     clientId: "872415365656-7qribadnc7k2u21kl6jjcbatdueevifh.apps.googleusercontent.com",
     clientSecret: "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",
     refreshToken: "1//04yti9k2agPknCgYIARAAGAQSNwF-L9IrTZPKt5Fqbg2vrM9sBtOks9cnY4M7Idg0LToQnlbYGME06k20vcyr_SVmYk1H_yZJdEc",
-    siteName: "Kiro Zozo Tech" // غير هذا لاسم موقعك الفعلي
+    siteName: "TECH PULSE 2026" 
 };
 
-// 🌟 النظام الجديد: 10 أقسام بكلماتها المفتاحية وتخصصاتها
+// 🌟 مصفوفة الأقسام مع روابط حقيقية وكلمات مفتاحية فريدة
 const CONTENT_NICHES = [
-    { name: "الربح من الإنترنت", prompt: "Make Money Online, passive income, fast websites to earn money", labels: ["Make Money", "Business", "Income"] },
-    { name: "أدوات الذكاء الاصطناعي", prompt: "New trending AI Tools, Product Hunt alternatives, AI for productivity", labels: ["AI Tools", "Technology", "Trends"] },
-    { name: "تطبيقات ومواقع", prompt: "Best useful Apps and Websites, APKMirror style reviews, AlternativeTo", labels: ["Apps", "Websites", "Reviews"] },
-    { name: "حل المشاكل التقنية", prompt: "How to fix common tech problems, PC errors, smartphone issues, StackOverflow style", labels: ["Tech Fixes", "Tutorials", "Guides"] },
-    { name: "المقارنات", prompt: "Comparison between top software/apps, AlternativeTo style comparison", labels: ["Comparisons", "Software", "Reviews"] },
-    { name: "أفضل 10", prompt: "Top 10 lists (apps, tools, websites, tech gadgets)", labels: ["Top 10", "Lists", "Tech"] },
-    { name: "الشروحات", prompt: "Step by step tech tutorial, How to use specific software or platform", labels: ["Tutorials", "How-To", "Education"] },
-    { name: "حل مشاكل التطبيقات المشهورة", prompt: "Fixing bugs in popular apps like TikTok, Instagram, WhatsApp, Reddit source style", labels: ["App Fixes", "Social Media", "Troubleshooting"] },
-    { name: "أفكار مشاريع", prompt: "Zero-capital online business ideas, digital marketing projects", labels: ["Business Ideas", "Entrepreneur", "Startup"] },
-    { name: "الترندات الجديدة", prompt: "Latest tech trends, newly released AI models, Google Trends tech news", labels: ["Tech News", "Trends", "Future"] }
+    { 
+        id: "money", 
+        topic: "Make Money Online & Side Hustles", 
+        keywords: ["money", "finance", "earnings"], 
+        trustedLinks: ["https://www.forbes.com/advisor/investing/", "https://www.entrepreneur.com/"] 
+    },
+    { 
+        id: "ai", 
+        topic: "Latest AI Tools & Innovations", 
+        keywords: ["ai", "tech", "intelligence"], 
+        trustedLinks: ["https://www.theverge.com/ai-artificial-intelligence", "https://openai.com/news/"] 
+    },
+    { 
+        id: "apps", 
+        topic: "Essential Apps & Website Reviews", 
+        keywords: ["apps", "software", "reviews"], 
+        trustedLinks: ["https://alternativeto.net/", "https://www.pcmag.com/reviews"] 
+    },
+    { 
+        id: "fix", 
+        topic: "Tech Troubleshooting & Problem Solving", 
+        keywords: ["fix", "guide", "support"], 
+        trustedLinks: ["https://www.ifixit.com/", "https://stackoverflow.blog/"] 
+    },
+    { 
+        id: "trends", 
+        topic: "Viral Tech Trends & Future Insights", 
+        keywords: ["trends", "viral", "future"], 
+        trustedLinks: ["https://trends.google.com/trends/", "https://www.wired.com/"] 
+    }
 ];
 
 const groq = new Groq({ apiKey: CONFIG.groqKey });
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function runGroqPublisher() {
     try {
-        // اختيار قسم عشوائي من الـ 10 أقسام
-        const selectedNiche = CONTENT_NICHES[Math.floor(Math.random() * CONTENT_NICHES.length)];
-        console.log(`🎯 Selected Niche: ${selectedNiche.name}`);
+        // 1. اختيار قسم عشوائي تماماً
+        const niche = CONTENT_NICHES[Math.floor(Math.random() * CONTENT_NICHES.length)];
+        console.log(`🎲 Selected Category: ${niche.topic}`);
 
-        console.log("🔍 Step 1: Picking a high-traffic title...");
+        // 2. إنشاء عنوان جذاب
         const topicRes = await groq.chat.completions.create({
-            messages: [{ role: "user", content: `Suggest ONE highly engaging, click-worthy English blog title about: ${selectedNiche.prompt}. Return ONLY the title text.` }],
+            messages: [{ role: "user", content: `Generate a high-CTR English blog title for: ${niche.topic}. Make it professional. ONLY the title text.` }],
             model: "llama-3.3-70b-versatile",
         });
         const targetTitle = topicRes.choices[0].message.content.trim().replace(/["']/g, "");
 
-        console.log("✍️ Step 2: Writing a 1500+ word SEO article with external links...");
-        // Prompt قوي جداً مخصص للـ SEO ولأدسنس
-        const contentPrompt = `Write a comprehensive, highly engaging, and SEO-optimized 1500-word blog post about "${targetTitle}".
-        CRITICAL REQUIREMENTS:
-        1. Professional Formatting: Use <p>, <h2>, <h3>, and <ul>/<li>.
-        2. External Links: Naturally include at least 3 outbound links to authoritative websites (like Wikipedia, official sites, or major news outlets) using <a href="..." target="_blank" rel="noopener noreferrer" class="seo-link">Anchor Text</a>.
-        3. Structure: Start with an engaging intro, include a "Key Takeaways" bulleted list early on, deep-dive into the subject, and end with a "FAQ" section.
-        4. Tone: Expert, engaging, and problem-solving.
-        5. Output ONLY HTML tags for the body content. Do NOT include markdown (\`\`\`html) or <html><body> tags.`;
+        // 3. كتابة المقال الطويل (SEO Optimized)
+        const contentPrompt = `Write a 1500-word professional English blog post for "${targetTitle}".
+        Structure:
+        - Introduction with a hook.
+        - "Why this Matters" section (Use a highlight box style later).
+        - Detailed H2 and H3 subheadings.
+        - A bulleted list of "Top Benefits".
+        - A "Pro Tip" section.
+        - Conclusion & FAQ.
+        IMPORTANT: Include these 2 real links naturally: ${niche.trustedLinks.join(", ")}.
+        Use ONLY valid HTML tags (<p>, <h2>, <h3>, <ul>, <li>, <a>). No markdown.`;
         
         const contentRes = await groq.chat.completions.create({
             messages: [{ role: "user", content: contentPrompt }],
@@ -56,69 +77,68 @@ async function runGroqPublisher() {
         });
         let articleBody = contentRes.choices[0].message.content.replace(/```html|```/g, "").trim();
 
-        console.log("🎨 Step 3: Generating Image background...");
-        const promptRes = await groq.chat.completions.create({
-            messages: [{ role: "user", content: `Based on title: "${targetTitle}", write a 4-word visual description for a dark, cinematic tech background image. No text in image. English only.` }],
+        // 4. صورة البنر
+        const imgPromptRes = await groq.chat.completions.create({
+            messages: [{ role: "user", content: `3-word visual description for a cinematic background: ${niche.topic}` }],
             model: "llama-3.3-70b-versatile",
         });
-        
-        let cleanPrompt = encodeURIComponent(promptRes.choices[0].message.content.trim().replace(/[^a-zA-Z0-9 ]/g, ""));
-        const imageUrl = `https://image.pollinations.ai/prompt/${cleanPrompt}?width=1200&height=630&nologo=true`;
-        
-        await sleep(5000); 
+        let cleanImgPrompt = encodeURIComponent(imgPromptRes.choices[0].message.content.trim());
+        const imageUrl = `https://image.pollinations.ai/prompt/${cleanImgPrompt}?width=1200&height=630&nologo=true`;
 
-        console.log("🪄 Step 4: Assembling Pro HTML Design...");
-        // التصميم الجديد: بنر احترافي بنصوص فوق الصورة، روابط خارجية واضحة، وشكل عصري
+        // 5. التصميم الفاخر (UI/UX)
         const finalHtml = `
             <style>
-                .pro-article { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.8; font-size: 17px; }
+                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+                .article-wrapper { font-family: 'Inter', sans-serif; color: #333; line-height: 1.8; max-width: 900px; margin: auto; }
                 
-                /* تصميم البنر الاحترافي (صورة عليها نصوص وفلاتر) */
-                .hero-banner { position: relative; border-radius: 16px; overflow: hidden; margin-bottom: 40px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); background-color: #000; }
-                .hero-img { width: 100%; max-height: 500px; object-fit: cover; display: block; opacity: 0.6; filter: contrast(1.1) brightness(0.8); transition: opacity 0.3s; }
-                .hero-banner:hover .hero-img { opacity: 0.8; }
-                .hero-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 40px 30px; background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0) 100%); pointer-events: none; }
-                .hero-tag { display: inline-block; background: #e74c3c; color: #fff; padding: 5px 12px; border-radius: 20px; font-size: 13px; font-weight: bold; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
-                .hero-title { color: #ffffff; margin: 0; font-size: 32px; font-weight: 800; line-height: 1.3; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
-                .hero-brand { color: #bdc3c7; font-size: 14px; margin-top: 10px; font-weight: 500; }
-
-                /* تنسيق المحتوى ليكون متوافق مع الوضع الليلي */
-                .pro-content h2 { border-bottom: 2px solid rgba(128,128,128,0.2); padding-bottom: 12px; margin-top: 40px; font-size: 26px; color: #2980b9; font-weight: 700;}
-                .pro-content h3 { font-size: 21px; margin-top: 30px; font-weight: 600; opacity: 0.9;}
-                .pro-content p { margin-bottom: 20px; opacity: 0.85; }
+                /* البنر الاحترافي مع نص واضح في كل المودات */
+                .main-banner { position: relative; border-radius: 20px; overflow: hidden; background: #000; margin-bottom: 40px; }
+                .banner-image { width: 100%; height: 450px; object-fit: cover; display: block; opacity: 0.5; filter: contrast(1.2); }
+                .banner-text-area { position: absolute; bottom: 0; left: 0; right: 0; padding: 50px; background: linear-gradient(0deg, rgba(0,0,0,0.95) 20%, rgba(0,0,0,0) 100%); }
+                .category-badge { background: #00d2ff; color: #000; padding: 4px 12px; border-radius: 5px; font-weight: bold; font-size: 12px; text-transform: uppercase; }
+                .banner-h1 { color: #ffffff !important; font-size: 36px; margin: 15px 0; line-height: 1.2; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
                 
-                /* تنسيق الروابط الخارجية */
-                .pro-content a.seo-link { color: #d35400; font-weight: 600; text-decoration: none; border-bottom: 1px dashed #d35400; transition: all 0.2s;}
-                .pro-content a.seo-link:hover { color: #e67e22; border-bottom: 1px solid #e67e22; background-color: rgba(230, 126, 34, 0.05); }
-
-                /* تنسيق القوائم النقطية لتكون مميزة */
-                .pro-content ul { background-color: rgba(41, 128, 185, 0.04); padding: 25px 45px; border-radius: 12px; border-left: 6px solid #2980b9; margin: 30px 0; }
-                .pro-content li { margin-bottom: 12px; opacity: 0.85; }
-
-                .pro-footer { text-align: center; margin-top: 50px; padding-top: 20px; border-top: 1px solid rgba(128,128,128,0.2); font-size: 14px; opacity: 0.5; font-style: italic; }
+                /* لمسات فخامة: ألوان فاتحة وخلفيات مميزة */
+                .pro-content h2 { color: #2c3e50; border-left: 5px solid #00d2ff; padding-left: 15px; margin-top: 40px; }
+                .highlight-box { background: #e3f2fd; border-radius: 12px; padding: 25px; margin: 30px 0; border: 1px solid #bbdefb; color: #0d47a1; }
+                .tip-box { background: #fffde7; border-radius: 12px; padding: 20px; margin: 20px 0; border: 1px solid #fff9c4; color: #f57f17; font-weight: 500; }
+                
+                /* الروابط */
+                .article-wrapper a { color: #007bff; text-decoration: underline; font-weight: 600; }
+                
+                /* التوافق مع الوضع الليلي للمدونة */
+                @media (prefers-color-scheme: dark) {
+                    .article-wrapper { color: #e0e0e0; }
+                    .pro-content h2 { color: #00d2ff; }
+                    .highlight-box { background: rgba(0, 210, 255, 0.1); border-color: #00d2ff; color: #81d4fa; }
+                    .tip-box { background: rgba(255, 235, 59, 0.1); border-color: #fbc02d; color: #fff176; }
+                }
             </style>
 
-            <div class="pro-article" dir="ltr">
-                <div class="hero-banner">
-                    <img class="hero-img" src="${imageUrl}" alt="${targetTitle}" loading="lazy">
-                    <div class="hero-overlay">
-                        <span class="hero-tag">${selectedNiche.name}</span>
-                        <h1 class="hero-title">${targetTitle}</h1>
-                        <div class="hero-brand">Exclusive on ${CONFIG.siteName}</div>
+            <div class="article-wrapper" dir="ltr">
+                <div class="main-banner">
+                    <img class="banner-image" src="${imageUrl}" alt="Banner">
+                    <div class="banner-text-area">
+                        <span class="category-badge">${niche.id}</span>
+                        <h1 class="banner-h1">${targetTitle}</h1>
+                        <div style="color: #ccc; font-size: 14px;">Premium Insights by ${CONFIG.siteName} • 2026</div>
                     </div>
                 </div>
                 
                 <div class="pro-content">
+                    <div class="highlight-box">
+                        <strong>Quick Insight:</strong> This guide explores the latest methodologies in ${niche.id} to give you a competitive edge this year.
+                    </div>
                     ${articleBody}
                 </div>
-                
-                <div class="pro-footer">
-                    <p>Published dynamically on ${CONFIG.siteName} | Powered by AI SEO Engine</p>
+
+                <div class="tip-box">
+                    💡 <strong>Expert Tip:</strong> Always verify links and stay updated with the latest changes in the ${niche.id} ecosystem for maximum results.
                 </div>
             </div>
         `;
 
-        console.log(`📤 Step 5: Publishing to Blogger in category [${selectedNiche.labels.join(", ")}]...`);
+        // 6. النشر مع الـ Labels الصحيحة
         const oauth2Client = new google.auth.OAuth2(CONFIG.clientId, CONFIG.clientSecret);
         oauth2Client.setCredentials({ refresh_token: CONFIG.refreshToken });
         const blogger = google.blogger({ version: "v3", auth: oauth2Client });
@@ -128,11 +148,10 @@ async function runGroqPublisher() {
             requestBody: { 
                 title: targetTitle, 
                 content: finalHtml, 
-                // نستخدم الكلمات المفتاحية الخاصة بالقسم الذي تم اختياره فقط
-                labels: selectedNiche.labels 
+                labels: [niche.id, "Insights", "2026"] // سيضع الكلمة الفريدة (money, ai, fix..)
             }
         });
-        console.log(`✅ Success! Article live at: ${response.data.url}`);
+        console.log(`✅ Live at: ${response.data.url}`);
     } catch (error) {
         console.error("❌ Error:", error.message);
     }
