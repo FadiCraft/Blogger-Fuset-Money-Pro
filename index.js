@@ -17,7 +17,7 @@ async function runKiroBot() {
     try {
         // تم اختيار الموديل من القائمة التي ظهرت في فحصك (v1 المستقر)
         const model = genAI.getGenerativeModel({ 
-            model: "models/gemini-2.0-flash" 
+model: "models/gemini-1.5-flash-latest"
         }, { apiVersion: 'v1' });
 
         console.log("🔍 Picking a global trending topic...");
