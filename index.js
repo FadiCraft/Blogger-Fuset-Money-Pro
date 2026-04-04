@@ -14,8 +14,7 @@ const CONFIG = {
 async function runAutoBlog() {
     try {
         const genAI = new GoogleGenerativeAI(CONFIG.geminiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
         console.log("🔍 Picking a trending English topic...");
         const topicPrompt = `As an SEO expert, suggest one trending and high-CPC article title about: ${CONFIG.topics.join(", ")}. Give me ONLY the title text.`;
         const topicResult = await model.generateContent(topicPrompt);
