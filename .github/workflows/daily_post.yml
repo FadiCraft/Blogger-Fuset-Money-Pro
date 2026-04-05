@@ -3,7 +3,7 @@ name: Blogger Empire Automation
 on:
   schedule:
     - cron: '0 */6 * * *' # يعمل كل 6 ساعات
-  workflow_dispatch: # زر لتشغيله يدوياً من واجهة جيتهاب
+  workflow_dispatch: # زر لتشغيله يدوياً
 
 jobs:
   run-bot:
@@ -18,7 +18,9 @@ jobs:
           node-version: '20'
 
       - name: Install Dependencies
-        run: npm install --force
+        run: |
+          npm install --force
+          npm install jimp # لضمان تثبيت مكتبة الصور بشكل مستقل إذا لزم الأمر
 
       - name: Execution
         env:
