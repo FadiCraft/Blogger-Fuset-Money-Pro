@@ -2,7 +2,7 @@ name: AI Publisher
 
 on:
   schedule:
-    - cron: '0 */6 * * *'   # كل 6 ساعات – عدلها كما تشاء
+    - cron: '0 */4 * * *'   # كل 6 ساعات – عدلها كما تشاء
   workflow_dispatch:
 
 jobs:
