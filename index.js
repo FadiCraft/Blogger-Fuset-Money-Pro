@@ -10,119 +10,104 @@ const CONFIG = {
     siteName: "TECH VANGUARD"
 };
 
+// 1. تحديث قائمة النيشات لتشمل الـ 10 تصنيفات المطلوبة
 const NICHES = [
-    { id: "FINANCE", label: "Wealth & Market Trends" },
-    { id: "TECH", label: "Future Technology & Software" },
-    { id: "AI", label: "Artificial Intelligence Impact" },
-    { id: "PRODUCTIVITY", label: "Digital Workflow Tools" }
+    { name: "الربح من الإنترنت", description: "Make Money Online, affiliate, adsense" },
+    { name: "أدوات الذكاء الاصطناعي", description: "AI Tools, ChatGPT, automation, productive AI" },
+    { name: "تطبيقات ومواقع", description: "Mobile Apps, useful websites, software reviews" },
+    { name: "حل المشاكل التقنية", description: "Fixing tech issues, windows/mac/android solutions" },
+    { name: "المقارنات", description: "Product comparisons, side-by-side reviews" },
+    { name: "أفضل 10", description: "Top 10 lists, best of rankings" },
+    { name: "الشروحات", description: "Step-by-step tutorials, educational guides" },
+    { name: "حل مشاكل التطبيقات المشهورة", description: "Social media fixes, TikTok/Instagram/Facebook troubleshooting" },
+    { name: "أفكار مشاريع", description: "Business ideas, startup concepts, zero capital projects" },
+    { name: "الترندات الجديدة", description: "New trends, viral tech, upcoming gadgets" }
 ];
 
 const groq = new Groq({ apiKey: CONFIG.groqKey });
 
 async function runGroqPublisher() {
     try {
+        // اختيار نيش عشوائي
         const selectedNiche = NICHES[Math.floor(Math.random() * NICHES.length)];
-        
-        console.log("📝 Generating Authority Title...");
+        console.log(`🎯 Selected Niche: ${selectedNiche.name}`);
+
+        // 1. إنشاء عنوان SEO احترافي باللغة العربية
+        console.log("📝 Generating Title...");
         const titleRes = await groq.chat.completions.create({
-            messages: [{ role: "user", content: `Create a professional, high-intent SEO title for ${selectedNiche.label} for 2026. Avoid clickbait, focus on value.` }],
+            messages: [{ role: "user", content: `Generate a viral, high-authority SEO title in ARABIC for a blog post about: ${selectedNiche.name} (${selectedNiche.description}). Include the year 2026. NO quotes.` }],
             model: "llama-3.3-70b-versatile",
         });
         const targetTitle = titleRes.choices[0].message.content.trim();
 
-        console.log("🤖 Generating High-Quality Article (1000+ words)...");
+        // 2. كتابة المحتوى والكلمات المفتاحية
+        console.log("🤖 Generating Detailed Content & Keywords...");
         const contentRes = await groq.chat.completions.create({
             messages: [{ 
                 role: "user", 
-                content: `Write a comprehensive, professional article about "${targetTitle}".
+                content: `Write an extremely detailed Arabic article for: "${targetTitle}".
                 
-                STRICT GUIDELINES:
-                1. Length: Over 1000 words of high-value, unique information.
-                2. Structure: <h1> title, deep intro, several <h2> and <h3> subheadings, rich paragraphs, and a strategic conclusion.
-                3. Links: Include 5 to 10 natural external links to authority sources (e.g., tech documentation, official platforms, or research). 
-                   Use: <a href='URL' target='_blank' rel='noopener'>Text</a>.
-                4. Formatting: Use <strong> for key terms. Use <ul class='premium-list'> or <ol class='premium-list'> for steps.
-                5. Keywords: Based on the generated content, provide 5 relevant SEO tags (labels) separated by commas.
-
-                Output ONLY a JSON object:
+                REQUIREMENTS:
+                1. Language: Arabic (Modern Standard).
+                2. Length: At least 2500-4000 words. Be very thorough, provide examples, and deep value.
+                3. Formatting: Use HTML (<h2>, <h3>, <p>, <ul>, <li>, <strong>).
+                4. Content: Include introduction, detailed sections, tips, and conclusion.
+                5. Links: Include 2-3 links to authoritative sites (e.g., Wikipedia, Google).
+                
+                You MUST output ONLY a valid JSON:
                 {
-                    "articleHtml": "Complete HTML content starting from <h1>",
-                    "dynamicLabels": ["tag1", "tag2", "tag3", "tag4", "tag5"]
-                }` 
+                    "articleHtml": "HTML_CONTENT_HERE",
+                    "keywords": ["tag1", "tag2", "tag3", "tag4", "tag5"]
+                }
+                
+                Note: "keywords" should be 5 relevant tags in Arabic related to the article topic.` 
             }],
             model: "llama-3.3-70b-versatile",
             response_format: { type: "json_object" } 
         });
         
-        const result = JSON.parse(contentRes.choices[0].message.content);
+        const articleData = JSON.parse(contentRes.choices[0].message.content);
 
-        console.log("🎨 Fetching Visual Asset...");
+        // 3. جلب الصورة (بناءً على العنوان)
         const imgDescRes = await groq.chat.completions.create({
-            messages: [{ role: "user", content: `Minimalist high-tech background for: "${targetTitle}". No text.` }],
+            messages: [{ role: "user", content: `Describe a cinematic background for: "${targetTitle}". English, 5 words.` }],
             model: "llama-3.3-70b-versatile",
         });
         const imgPrompt = encodeURIComponent(imgDescRes.choices[0].message.content.trim());
         const finalImageUrl = `https://image.pollinations.ai/prompt/${imgPrompt}?width=1200&height=630&nologo=true`; 
 
+        // 4. تجميع HTML (مع دعم اللغة العربية RTL)
         const finalHtml = `
-            <style>
-                .main-seo-wrapper { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.8; color: #333; max-width: 900px; margin: 0 auto; padding: 20px; }
-                .hero-image-box { text-align: center; margin-bottom: 40px; }
-                .hero-image-box img { width: 100%; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
-                
-                .article-body-content h1 { color: #0077b6; font-size: 32px; text-align: center; margin-bottom: 30px; font-weight: 800; }
-                .article-body-content h2 { color: #005f73; font-size: 26px; border-left: 6px solid #00bbf9; padding-left: 15px; margin-top: 45px; }
-                .article-body-content h3 { color: #0a9396; font-size: 22px; margin-top: 35px; }
-                
-                .article-body-content p { font-size: 18px; margin-bottom: 25px; color: #444; text-align: justify; }
-                .article-body-content strong { color: #b8860b; } /* أصفر ذهبي قاتم للكلمات المهمة */
-                
-                .article-body-content a { color: #0077b6; text-decoration: underline; font-weight: 600; transition: 0.3s; }
-                .article-body-content a:hover { color: #00b4d8; text-decoration: none; }
-                
-                .premium-list { background: #fdfdfd; padding: 25px 50px; border-radius: 12px; border: 1px solid #eef2f3; margin: 30px 0; }
-                .premium-list li { margin-bottom: 15px; font-size: 17px; color: #555; }
-                
-                .article-footer-note { text-align: center; font-size: 13px; color: #999; margin-top: 60px; padding-top: 20px; border-top: 1px solid #eee; letter-spacing: 1px; }
-                
-                @media (prefers-color-scheme: dark) {
-                    .main-seo-wrapper { color: #e0e0e0; }
-                    .article-body-content p { color: #ccc; }
-                    .premium-list { background: #1a1a1a; border-color: #333; }
-                    .article-body-content h1, .article-body-content h2, .article-body-content h3 { color: #00b4d8; }
-                }
-            </style>
-
-            <div class="main-seo-wrapper" dir="ltr">
-                <div class="hero-image-box">
-                    <img src="${finalImageUrl}" alt="${targetTitle}" loading="lazy">
-                </div>
-                
-                <div class="article-body-content">
-                    ${result.articleHtml}
-                </div>
-                
-                <div class="article-footer-note">
-                    PUBLISHED BY ${CONFIG.siteName} • AI EDITORIAL SYSTEM 2026
-                </div>
+            <div dir="rtl" style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.8; color: #333;">
+                <style>
+                    .main-img { width: 100%; border-radius: 15px; margin-bottom: 20px; }
+                    h2 { color: #2c3e50; border-right: 5px solid #3498db; padding-right: 15px; }
+                    p { font-size: 18px; text-align: justify; }
+                    ul { background: #f9f9f9; padding: 20px 40px; border-radius: 10px; }
+                </style>
+                <img src="${finalImageUrl}" alt="${targetTitle}" class="main-img">
+                ${articleData.articleHtml}
+                <hr>
+                <p style="text-align:center; font-size: 12px; color: #777;">تم إنشاؤه بواسطة ذكاء TECH VANGUARD الاصطناعي 2026</p>
             </div>
         `;
 
-        console.log("🚀 Publishing with Dynamic Labels: " + result.dynamicLabels.join(", "));
+        // 5. النشر عبر بلوجر مع الكلمات المفتاحية الديناميكية
+        console.log("🚀 Publishing to Blogger...");
         const oauth2Client = new google.auth.OAuth2(CONFIG.clientId, CONFIG.clientSecret);
         oauth2Client.setCredentials({ refresh_token: CONFIG.refreshToken });
         const blogger = google.blogger({ version: "v3", auth: oauth2Client });
 
-        await blogger.posts.insert({
+        const response = await blogger.posts.insert({
             blogId: CONFIG.blogId,
             requestBody: { 
                 title: targetTitle, 
                 content: finalHtml, 
-                labels: result.dynamicLabels // هنا يتم استخدام الكلمات المفتاحية الناتجة من المحتوى
+                labels: articleData.keywords // الكلمات المفتاحية المستخرجة من الذكاء الاصطناعي
             }
         });
 
-        console.log(`✨ SUCCESS! Article "${targetTitle}" is live.`);
+        console.log(`✨ DONE! Published: ${response.data.url}`);
     } catch (error) {
         console.error("🔴 Error:", error.message);
     }
