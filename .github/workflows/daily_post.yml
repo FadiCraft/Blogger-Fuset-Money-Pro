@@ -1,10 +1,9 @@
 name: Auto Blogger Empire Workflow
 
-# متى يعمل هذا السكريبت؟
 on:
   schedule:
-    - cron: '0 */6 * * *' # يعمل كل 6 ساعات (يمكنك تعديلها)
-  workflow_dispatch: # يتيح لك تشغيله يدوياً من واجهة جيتهاب لتجربته
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
 
 jobs:
   build-and-publish:
@@ -17,15 +16,18 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v3
       with:
-        node-version: '18' # إصدار النود
+        node-version: '18'
 
+    # --- هذه هي الخطوة المفقودة التي سببت الخطأ ---
     - name: Install Dependencies
       run: npm install
+    # -------------------------------------------
 
     - name: Run Auto Blogger Script
       env:
-        # هذه المتغيرات السرية يجب إضافتها في إعدادات مستودع جيتهاب (Settings -> Secrets)
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         BLOG_ID: ${{ secrets.BLOG_ID }}
-        GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
+        CLIENT_ID: ${{ secrets.CLIENT_ID }}
+        CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+        REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
       run: node index.js
