@@ -10,247 +10,296 @@ const CONFIG = {
     siteName: "TECH VANGUARD"
 };
 
+const NICHES = [
+    { id: "MONEY", label: "Financial Growth", key: "Income" },
+    { id: "AI", label: "AI Revolution", key: "Intelligence" },
+    { id: "FIX", label: "Tech Solutions", key: "Troubleshooting" },
+    { id: "APPS", label: "Digital Tools", key: "Applications" }
+];
+
 const groq = new Groq({ apiKey: CONFIG.groqKey });
 
 async function runGroqPublisher() {
     try {
-        // 1. توليد عنوان قوي
+        const selectedNiche = NICHES[Math.floor(Math.random() * NICHES.length)];
+        
+        // 1. إنشاء عنوان SEO قوي جداً
+        console.log("📝 Generating Title...");
         const titleRes = await groq.chat.completions.create({
-            messages: [{ role: "user", content: "Generate a viral, futuristic tech/money guide title for 2026. No emojis." }],
+            messages: [{ role: "user", content: `Generate a high-authority, viral SEO title for ${selectedNiche.label} (Year 2026). NO quotes.` }],
             model: "llama-3.3-70b-versatile",
         });
         const targetTitle = titleRes.choices[0].message.content.trim();
 
-        // 2. توليد محتوى ضخم (Deep Content)
-        console.log("🔥 Generating Mega Article (1000+ words)...");
+        // 2. كتابة محتوى منظم بصيغة JSON ليتناسب مع التصميم الاحترافي والـ SEO
+        console.log("🤖 Generating Detailed Content in JSON Format...");
         const contentRes = await groq.chat.completions.create({
             messages: [{ 
                 role: "user", 
-                content: `Write a massive, 1200-word authoritative guide about "${targetTitle}".
-                STRUCTURE REQUIREMENTS:
-                - Introduction: 200 words.
-                - 5 Main Chapters (<h2>): Each chapter must have 150+ words of deep analysis.
-                - Expert Tips Section: Detailed list.
-                - Conclusion: Comprehensive summary.
-                - NO EMOJIS (Blogger bug).
-                - NO FAKE LINKS.
+                content: `Write a highly engaging, extremely detailed, and informative SEO article for "${targetTitle}". 
+                REQUIREMENTS:
+                1. The article body must be long-form, comprehensive, and valuable (aim for 1500 to 3000 words).
+                2. You MUST include relevant external links contextually within the text (e.g., linking to YouTube, official tools, or authoritative sites). Use EXACTLY this syntax for links: <a href="URL" target="_blank" rel="noopener noreferrer">Link Text</a>.
                 
-                Format as JSON:
+                You MUST output ONLY a valid JSON object matching this exact structure (no extra text before or after):
                 {
-                  "intro": "...",
-                  "chapters": [
-                    {"title": "Chapter 1", "content": "..."},
-                    {"title": "Chapter 2", "content": "..."},
-                    {"title": "Chapter 3", "content": "..."},
-                    {"title": "Chapter 4", "content": "..."},
-                    {"title": "Chapter 5", "content": "..."}
-                  ],
-                  "summary": "..."
+                    "introSubtitle": "Catchy subtitle with an emoji (e.g. ⚡ The AI Gold Rush)",
+                    "introText": "A powerful and engaging 2-sentence introduction paragraph.",
+                    "features": [
+                        { "number": "01", "icon": "🚀", "keyword": "STRATEGY", "title": "Feature 1", "desc": "Short description" },
+                        { "number": "02", "icon": "📊", "keyword": "GROWTH", "title": "Feature 2", "desc": "Short description" },
+                        { "number": "03", "icon": "🎨", "keyword": "REVENUE", "title": "Feature 3", "desc": "Short description" }
+                    ],
+                    "articleBodyHtml": "The comprehensive main article body in clean HTML. Use <h2>, <h3>, <p>, <strong>. Make sure paragraphs are well-spaced and easy to read. Include external links with target='_blank'. You MUST include at least one list using EXACTLY this syntax: <ul class='kiro-styled-list'><li>...</li></ul>"
                 }` 
             }],
             model: "llama-3.3-70b-versatile",
-            response_format: { type: "json_object" }
+            response_format: { type: "json_object" } 
         });
         
-        const data = JSON.parse(contentRes.choices[0].message.content);
+        const articleData = JSON.parse(contentRes.choices[0].message.content);
 
-        // 3. تصميم الـ HTML (العودة للألوان القوية والأنيميشن)
+        // 3. تقنية "الصورة الفريدة"
+        console.log("🎨 Generating Unique Image Prompt...");
+        const imgDescRes = await groq.chat.completions.create({
+            messages: [{ role: "user", content: `Briefly describe a cinematic, futuristic background for: "${targetTitle}". No text in image. 5 words.` }],
+            model: "llama-3.3-70b-versatile",
+        });
+        const imgPrompt = encodeURIComponent(imgDescRes.choices[0].message.content.trim());
+        const finalImageUrl = `https://image.pollinations.ai/prompt/${imgPrompt}?width=1200&height=630&nologo=true`; 
+
+        // 4. دمج البيانات مع التصميم المستقبلي وتحسين المساحات لـ AdSense
+        console.log("🏗️ Assembling Premium HTML...");
         const finalHtml = `
-        <div class="kiro-container" dir="ltr">
+        <div class="kiro-premium-wrapper" dir="ltr">
             <style>
-                @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=Inter:wght@300;600;800&display=swap');
+                /* ========== الخطوط والتنسيقات الأساسية ========== */
+                @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;700;800&display=swap');
 
-                :root {
-                    --primary: #00f2fe;
-                    --secondary: #4facfe;
-                    --accent: #f093fb;
-                    --bg-dark: #0f172a;
-                    --text-main: #e2e8f0;
-                }
-
-                .kiro-container {
-                    font-family: 'Inter', sans-serif;
-                    background: var(--bg-dark);
-                    color: var(--text-main);
-                    padding: 20px;
-                    border-radius: 24px;
+                .kiro-premium-wrapper {
+                    font-family: 'Plus Jakarta Sans', sans-serif;
                     line-height: 1.8;
-                    overflow: hidden;
-                    position: relative;
+                    color: #2c3e50;
+                    max-width: 1000px; /* تقليل العرض قليلاً ليكون مريحاً للقراءة */
+                    margin: 0 auto;
+                    padding: 30px 20px;
                 }
 
-                /* Animation: FadeInUp */
-                @keyframes fadeInUp {
-                    from { opacity: 0; transform: translateY(30px); }
-                    to { opacity: 1; transform: translateY(0); }
+                .kiro-premium-wrapper a {
+                    color: #3498db;
+                    text-decoration: none;
+                    border-bottom: 1px solid transparent;
+                    transition: all 0.3s ease;
                 }
 
-                /* Header Futuristic */
-                .kiro-header {
-                    text-align: center;
-                    padding: 60px 20px;
-                    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-                    border-radius: 20px;
-                    border: 1px solid rgba(255,255,255,0.1);
-                    margin-bottom: 30px;
-                    animation: fadeInUp 0.8s ease-out;
+                .kiro-premium-wrapper a:hover {
+                    color: #2ecc71;
+                    border-bottom: 1px solid #2ecc71;
                 }
 
-                .kiro-header h1 {
-                    font-family: 'Orbitron', sans-serif;
-                    font-size: clamp(28px, 5vw, 50px);
-                    background: linear-gradient(to right, var(--primary), var(--accent));
-                    -webkit-background-clip: text;
-                    -webkit-text-fill-color: transparent;
-                    margin-bottom: 20px;
-                    text-transform: uppercase;
-                }
-
-                /* Hero Image with Glow */
-                .kiro-img-wrapper {
-                    position: relative;
+                /* ========== العنوان الرئيسي ========== */
+                .kiro-main-title {
+                    font-size: clamp(32px, 5vw, 54px);
+                    font-weight: 800;
+                    line-height: 1.2;
                     margin-bottom: 40px;
-                    border-radius: 20px;
-                    overflow: hidden;
-                    box-shadow: 0 0 30px rgba(0, 242, 254, 0.2);
-                    animation: fadeInUp 1s ease-out;
+                    background: linear-gradient(135deg, #1e3c72 0%, #2ecc71 50%, #3498db 100%);
+                    -webkit-background-clip: text;
+                    background-clip: text;
+                    -webkit-text-fill-color: transparent;
                 }
 
-                .kiro-img-wrapper img {
+                /* ========== الهيدر الرئيسي ========== */
+                .kiro-hero-box {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 30px;
+                    margin-bottom: 50px;
+                }
+
+                .kiro-featured-img {
                     width: 100%;
-                    display: block;
-                    transition: transform 0.5s;
-                }
-
-                .kiro-img-wrapper:hover img { transform: scale(1.05); }
-
-                /* Sectioning & Spacing */
-                .kiro-content-section {
-                    background: rgba(255,255,255,0.03);
-                    padding: 40px;
+                    height: auto;
+                    max-height: 500px;
+                    object-fit: cover;
                     border-radius: 20px;
-                    margin-bottom: 25px;
-                    border-left: 5px solid var(--primary);
-                    transition: 0.3s;
+                    box-shadow: 0 15px 35px rgba(0,0,0,0.1);
                 }
 
-                .kiro-content-section:hover {
-                    background: rgba(255,255,255,0.06);
-                    transform: translateX(10px);
+                .kiro-intro-card {
+                    background: #f8f9fa;
+                    padding: 35px;
+                    border-radius: 20px;
+                    border-left: 5px solid #3498db;
                 }
 
-                .kiro-content-section h2 {
-                    font-family: 'Orbitron', sans-serif;
-                    color: var(--primary);
+                .kiro-intro-card h2 {
                     font-size: 26px;
+                    margin: 0 0 15px 0;
+                    color: #2c3e50;
+                }
+
+                /* ========== شبكة المميزات ========== */
+                .kiro-features-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                    gap: 25px;
+                    margin: 50px 0;
+                }
+
+                .kiro-feature-item {
+                    padding: 30px;
+                    background: #ffffff;
+                    border-radius: 16px;
+                    border: 1px solid #e0e0e0;
+                    box-shadow: 0 5px 15px rgba(0,0,0,0.03);
+                    transition: transform 0.3s ease;
+                }
+
+                .kiro-feature-item:hover {
+                    transform: translateY(-5px);
+                    border-color: #3498db;
+                }
+
+                .kiro-feature-item span {
+                    font-weight: 800;
+                    color: #3498db;
+                    font-size: 13px;
+                    letter-spacing: 1.5px;
+                    display: inline-block;
                     margin-bottom: 15px;
                 }
 
-                .kiro-content-section p {
-                    font-size: 18px;
-                    color: #cbd5e1;
-                    text-align: justify;
+                .kiro-feature-item h3 {
+                    font-size: 20px;
+                    margin: 0 0 12px;
+                    color: #2c3e50;
                 }
 
-                /* Custom Styled List (No Emojis, No Bugs) */
-                .kiro-list {
+                /* ========== مساحات وتنسيقات جسم المقال (AdSense Optimized) ========== */
+                .kiro-article-body {
+                    margin-top: 40px;
+                }
+
+                .kiro-article-body h2 {
+                    font-size: 30px;
+                    margin: 50px 0 25px 0;
+                    color: #1a252f;
+                    border-bottom: 2px solid #ecf0f1;
+                    padding-bottom: 10px;
+                }
+
+                .kiro-article-body h3 {
+                    font-size: 24px;
+                    margin: 40px 0 20px;
+                    color: #2c3e50;
+                }
+
+                .kiro-article-body p {
+                    font-size: 18px;
+                    line-height: 1.9;
+                    color: #34495e;
+                    margin-bottom: 30px; /* مساحة ممتازة بين الفقرات لإعلانات جوجل */
+                }
+
+                /* ========== قائمة منسقة ========== */
+                .kiro-styled-list {
                     list-style: none;
                     padding: 0;
-                    margin: 20px 0;
+                    margin: 30px 0;
                 }
 
-                .kiro-list li {
-                    position: relative;
-                    padding: 15px 15px 15px 40px;
-                    background: rgba(255,255,255,0.02);
-                    margin-bottom: 10px;
-                    border-radius: 10px;
+                .kiro-styled-list li {
+                    padding: 15px 20px;
+                    background: #f8f9fa;
+                    margin-bottom: 12px;
+                    border-radius: 12px;
+                    display: flex;
+                    align-items: center;
+                    gap: 15px;
+                    border-left: 4px solid #2ecc71;
+                    font-weight: 500;
                 }
 
-                .kiro-list li::before {
-                    content: "";
-                    position: absolute;
-                    left: 15px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    width: 10px;
-                    height: 10px;
-                    background: var(--accent);
-                    border-radius: 50%;
-                    box-shadow: 0 0 10px var(--accent);
+                .kiro-styled-list li::before {
+                    content: "✨";
+                    font-size: 18px;
                 }
 
-                /* Footer */
+                /* ========== الفوتر ========== */
                 .kiro-footer {
                     text-align: center;
-                    padding: 40px;
-                    border-top: 1px solid rgba(255,255,255,0.1);
-                    font-family: 'Orbitron', sans-serif;
-                    letter-spacing: 3px;
-                    font-size: 12px;
-                    color: var(--secondary);
+                    padding: 30px 20px;
+                    border-top: 1px solid #ecf0f1;
+                    margin-top: 60px;
+                    font-size: 13px;
+                    color: #7f8c8d;
+                    letter-spacing: 1.5px;
+                }
+
+                /* ========== التجاوب (Responsive) ========== */
+                @media (max-width: 768px) {
+                    .kiro-premium-wrapper { padding: 15px; }
+                    .kiro-intro-card { padding: 25px; }
+                    .kiro-article-body p { font-size: 17px; }
+                }
+
+                @media (prefers-color-scheme: dark) {
+                    .kiro-premium-wrapper { color: #ecf0f1; }
+                    .kiro-intro-card, .kiro-feature-item, .kiro-styled-list li { background: #1a252f; border-color: #2c3e50; }
+                    .kiro-intro-card h2, .kiro-feature-item h3, .kiro-article-body h2, .kiro-article-body h3 { color: #ecf0f1; }
+                    .kiro-article-body p { color: #bdc3c7; }
                 }
             </style>
 
-            <header class="kiro-header">
-                <h1>${targetTitle}</h1>
-                <p style="font-size: 18px; opacity: 0.8;">Ultimate Intelligence Report // 2026</p>
-            </header>
+            <h1 class="kiro-main-title">${targetTitle}</h1>
 
-            <div class="kiro-img-wrapper">
-                <img src="https://image.pollinations.ai/prompt/${encodeURIComponent(targetTitle)}?width=1200&height=640&nologo=true" alt="Banner">
-            </div>
-
-            <div class="kiro-content-section">
-                <h2>Executive Summary</h2>
-                <p>${data.intro}</p>
-            </div>
-
-            ${data.chapters.map(ch => `
-                <div class="kiro-content-section">
-                    <h2>${ch.title}</h2>
-                    <p>${ch.content}</p>
+            <div class="kiro-hero-box">
+                <img class="kiro-featured-img" src="${finalImageUrl}" alt="${targetTitle}">
+                <div class="kiro-intro-card">
+                    <h2>${articleData.introSubtitle}</h2>
+                    <p>${articleData.introText}</p>
                 </div>
-            `).join('')}
-
-            <div class="kiro-content-section">
-                <h2>Key Takeaways</h2>
-                <ul class="kiro-list">
-                    <li>Comprehensive Data Analysis and Integration</li>
-                    <li>Strategic Implementation Frameworks</li>
-                    <li>Scalable Solutions for Global Markets</li>
-                    <li>Future-Proof Methodology for 2026</li>
-                </ul>
             </div>
 
-            <div class="kiro-content-section">
-                <h2>Final Conclusion</h2>
-                <p>${data.summary}</p>
+            <div class="kiro-features-grid">
+                ${articleData.features.map(f => `
+                <div class="kiro-feature-item">
+                    <span>${f.icon} ${f.number} // ${f.keyword}</span>
+                    <h3>${f.title}</h3>
+                    <p>${f.desc}</p>
+                </div>
+                `).join('')}
             </div>
 
-            <footer class="kiro-footer">
-                SYSTEM STATUS: ACTIVE | TERMINAL: ${CONFIG.siteName}
-            </footer>
+            <div class="kiro-article-body">
+                ${articleData.articleBodyHtml}
+            </div>
+
+            <div class="kiro-footer">
+                ENGINEERED BY ${CONFIG.siteName} AI ENGINE | EXCLUSIVE EDITORIAL 2026 | v2.0
+            </div>
         </div>
         `;
 
-        // 4. النشر لبلوجر
+        // 5. النشر عبر API
+        console.log("🚀 Publishing to Blogger...");
         const oauth2Client = new google.auth.OAuth2(CONFIG.clientId, CONFIG.clientSecret);
         oauth2Client.setCredentials({ refresh_token: CONFIG.refreshToken });
         const blogger = google.blogger({ version: "v3", auth: oauth2Client });
 
-        await blogger.posts.insert({
+        const response = await blogger.posts.insert({
             blogId: CONFIG.blogId,
             requestBody: { 
                 title: targetTitle, 
                 content: finalHtml, 
-                labels: ["MegaGuide", "FutureTech", "2026"] 
+                labels: [selectedNiche.id, "Kiro-Premium-AI", "2026"] 
             }
         });
 
-        console.log("✅ BOOM! Article is Live with Animations & Long Content.");
+        console.log(`✨ DONE! Article Published Successfully: ${response.data.url}`);
     } catch (error) {
-        console.error("❌ Error:", error);
+        console.error("🔴 Error:", error.message);
     }
 }
 
