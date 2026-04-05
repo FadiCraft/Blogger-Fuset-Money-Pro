@@ -1,33 +1,29 @@
-name: Auto Blogger Empire Workflow
+name: Blogger Empire Automation
 
 on:
   schedule:
-    - cron: '0 */6 * * *'
-  workflow_dispatch:
+    - cron: '0 */6 * * *' # يعمل كل 6 ساعات
+  workflow_dispatch: # زر لتشغيله يدوياً من واجهة جيتهاب
 
 jobs:
-  build-and-publish:
+  run-bot:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v3
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '18'
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
 
-    # --- هذه هي الخطوة المفقودة التي سببت الخطأ ---
-    - name: Install Dependencies
-      run: npm install
-    # -------------------------------------------
+      - name: Install Dependencies
+        run: npm install --force
 
-    - name: Run Auto Blogger Script
-      env:
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        BLOG_ID: ${{ secrets.BLOG_ID }}
-        CLIENT_ID: ${{ secrets.CLIENT_ID }}
-        CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-        REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
-      run: node index.js
+      - name: Execution
+        env:
+          BLOG_ID: ${{ secrets.BLOG_ID }}
+          CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
+        run: node index.js
