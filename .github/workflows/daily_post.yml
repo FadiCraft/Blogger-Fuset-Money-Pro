@@ -1,25 +1,31 @@
-name: AI Publisher
+name: Auto Blogger Empire Workflow
 
+# متى يعمل هذا السكريبت؟
 on:
   schedule:
-    - cron: '0 */4 * * *'   # يعمل كل 4 ساعات تلقائياً
-  workflow_dispatch:        # يتيح لك تشغيله يدوياً بنقرة زر
+    - cron: '0 */6 * * *' # يعمل كل 6 ساعات (يمكنك تعديلها)
+  workflow_dispatch: # يتيح لك تشغيله يدوياً من واجهة جيتهاب لتجربته
 
 jobs:
-  build:
+  build-and-publish:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout Repository
+      uses: actions/checkout@v3
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18' # إصدار النود
 
-      - name: Install dependencies
-        run: |
-          npm install groq-sdk googleapis rss-parser
+    - name: Install Dependencies
+      run: npm install
 
-      - name: Run publisher
-        run: node index.js
+    - name: Run Auto Blogger Script
+      env:
+        # هذه المتغيرات السرية يجب إضافتها في إعدادات مستودع جيتهاب (Settings -> Secrets)
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        BLOG_ID: ${{ secrets.BLOG_ID }}
+        GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
+      run: node index.js
