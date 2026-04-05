@@ -11,9 +11,11 @@ const REFRESH_TOKEN ="1//04yti9k2agPknCgYIARAAGAQSNwF-L9IrTZPKt5Fqbg2vrM9sBtOks9
 
 // قائمة المصادر - يمكنك إضافة أي عدد من الروابط
 const RSS_SOURCES = [
-    'https://www.theverge.com/rss/index.xml',
-    'https://www.techcrunch.com/feed/',
-    'https://feeds.feedburner.com/ign/games-all'
+    'https://www.makeuseof.com/feed/',
+    'https://fossbytes.com/feed/',
+    'https://www.siliconera.com/feed/',
+    'https://phys.org/rss-feed/',
+    'https://gadgetstouse.com/feed/'
 ];
 
 /**
