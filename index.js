@@ -3,78 +3,100 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const { google } = require('googleapis');
 
+// إحضار المفاتيح من بيئة جيتهاب السرية
 const BLOG_ID = "8249860422330426533";
 const CLIENT_ID = "872415365656-7qribadnc7k2u21kl6jjcbatdueevifh.apps.googleusercontent.com";
 const CLIENT_SECRET = "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";
 const REFRESH_TOKEN ="1//04yti9k2agPknCgYIARAAGAQSNwF-L9IrTZPKt5Fqbg2vrM9sBtOks9cnY4M7Idg0LToQnlbYGME06k20vcyr_SVmYk1H_yZJdEc";
 
 
-const RSS_FEED_URL = 'https://www.techcrunch.com/feed/'; // مثال لموقع محتواه غني
+// قائمة المصادر (يمكنك إضافة أي رابط RSS هنا)
+const RSS_FEEDS = [
+    'https://www.techcrunch.com/feed/',
+    'https://www.theverge.com/rss/index.xml',
+    'https://feeds.feedburner.com/ign/games-all'
+];
 
-async function fetchFullContent(url) {
+async function getFullContent(url) {
     try {
-        const { data } = await axios.get(url);
-        const $ = cheerio.load(data);
+        // محاكاة متصفح حقيقي لتجنب الحظر
+        const response = await axios.get(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            },
+            timeout: 10000
+        });
 
-        // هنا نحدد "الحاوية" التي تضم المقال. تختلف من موقع لآخر
-        // في معظم المواقع تكون داخل وسم <article> أو div بكلاس معين
-        let fullHtml = $('.entry-content').html() || $('article').html() || $('.post-content').html();
+        const $ = cheerio.load(response.data);
 
-        if (!fullHtml) return "تعذر سحب المحتوى الكامل، يرجى زيارة المصدر.";
+        // محاولة إيجاد حاوية المقال (تختلف من موقع لآخر)
+        // يبحث عن أشهر الكلاسات التي تستخدمها المواقع العالمية للمقال
+        let articleHtml = $('article').html() || 
+                          $('.entry-content').html() || 
+                          $('.post-content').html() || 
+                          $('.article-body').html();
 
-        // تنظيف المحتوى من الإعلانات أو السكريبتات لضمان سلامة مدونتك
-        const $cleaner = cheerio.load(fullHtml);
-        $cleaner('script, ins, iframe, ads').remove(); 
+        if (!articleHtml) return null;
+
+        // تنظيف المحتوى من الإعلانات والسكريبتات المزعجة
+        const $cleaner = cheerio.load(articleHtml);
+        $cleaner('script, ins, iframe, style, ads, nav, footer').remove();
         
         return $cleaner.html();
     } catch (error) {
-        console.error("خطأ في سحب المحتوى الكامل:", error.message);
+        console.error(`خطأ أثناء سحب الرابط ${url}:`, error.message);
         return null;
     }
 }
 
-async function startAutoBlogger() {
+async function startBot() {
     try {
         const parser = new Parser();
-        const feed = await parser.parseURL(RSS_FEED_URL);
-        const item = feed.items[0]; 
+        const randomFeed = RSS_FEEDS[Math.floor(Math.random() * RSS_FEEDS.length)];
+        console.log(`1. السحب من مصدر: ${randomFeed}`);
 
-        console.log(`1. تم العثور على خبر: ${item.title}`);
-        
-        // سحب المحتوى الكامل من رابط المقال
-        const fullBody = await fetchFullContent(item.link);
+        const feed = await parser.parseURL(randomFeed);
+        const item = feed.items[0]; // جلب أحدث خبر
 
-        if (!fullBody) return;
+        if (!item) return;
+        console.log(`2. الخبر المكتشف: ${item.title}`);
 
-        // إعداد المصادقة مع بلوجر
+        const fullBody = await getFullContent(item.link);
+        if (!fullBody) {
+            console.log("لم يتم العثور على محتوى كامل، سيتم إلغاء النشر لهذه المرة.");
+            return;
+        }
+
+        // إعداد اتصال بلوجر (OAuth2)
         const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET);
         oauth2Client.setCredentials({ refresh_token: REFRESH_TOKEN });
         const blogger = google.blogger({ version: 'v3', auth: oauth2Client });
 
-        const htmlFinal = `
-            <div dir="rtl" style="text-align: right;">
+        const finalHtml = `
+            <div dir="ltr" style="text-align: left; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
                 ${fullBody}
                 <hr/>
-                <p>المصدر الأصلي: <a href="${item.link}">${item.title}</a></p>
+                <p style="background: #eee; padding: 10px;">
+                    <strong>Source:</strong> <a href="${item.link}" target="_blank">${item.title}</a>
+                </p>
             </div>
         `;
 
-        console.log('2. جاري النشر على بلوجر...');
+        console.log('3. جاري النشر على بلوجر...');
         await blogger.posts.insert({
             blogId: BLOG_ID,
             requestBody: {
                 title: item.title,
-                content: htmlFinal,
-                labels: ['أخبار تقنية', 'محتوى كامل'],
+                content: finalHtml,
+                labels: ['Auto-Post', 'Tech News', 'Games'],
             },
             isDraft: false
         });
 
-        console.log('✅ تم بنجاح! المقال الآن متاح بالكامل مع صوره.');
-
+        console.log('✅ تم النشر بنجاح!');
     } catch (error) {
-        console.error('❌ خطأ:', error.message);
+        console.error('❌ خطأ في النظام:', error.message);
     }
 }
 
-startAutoBlogger();
+startBot();
