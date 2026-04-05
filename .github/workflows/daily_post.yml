@@ -2,8 +2,8 @@ name: AI Publisher
 
 on:
   schedule:
-    - cron: '0 */4 * * *'   # كل 6 ساعات – عدلها كما تشاء
-  workflow_dispatch:
+    - cron: '0 */4 * * *'   # يعمل كل 4 ساعات تلقائياً
+  workflow_dispatch:        # يتيح لك تشغيله يدوياً بنقرة زر
 
 jobs:
   build:
@@ -19,7 +19,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm install groq-sdk googleapis axios sharp
+          npm install groq-sdk googleapis rss-parser
 
       - name: Run publisher
         run: node index.js
