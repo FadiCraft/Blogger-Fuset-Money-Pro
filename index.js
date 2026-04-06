@@ -19,7 +19,7 @@ const CONFIG = {
         apiKey: "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"
     },
     watermark: {
-        text: "© TRENDING TECH UPDATE"
+        text: "TECH"
     }
 };
 
@@ -36,64 +36,91 @@ const groq = new Groq({ apiKey: CONFIG.groq.apiKey });
 const parser = new Parser();
 
 // ==========================================
-// معالجة الصور
+// معالجة الصور بعلامة مائية احترافية
 // ==========================================
 async function processImage(imageUrl) {
     try {
         if (!imageUrl) return null;
         
-        console.log("📸 Processing image...");
+        console.log("📸 معالجة الصورة...");
         const response = await axios({
             method: 'get',
             url: imageUrl,
             responseType: 'arraybuffer',
-            timeout: 10000
+            timeout: 15000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
         });
         
-        const image = await Jimp.read(Buffer.from(response.data));
+        let image = await Jimp.read(Buffer.from(response.data));
         
-        // تحسين الصورة
-        if (image.getWidth() > 800) {
-            image.resize(800, Jimp.AUTO);
+        // تحسين الجودة والحجم
+        if (image.getWidth() > 1200) {
+            image.resize(1200, Jimp.AUTO);
         }
         
-        // إضافة علامة مائية
+        // تحسين التباين والألوان
+        image.contrast(0.05);
+        image.brightness(0.02);
+        
+        // علامة مائية أنيقة وشفافة
         const font = await Jimp.loadFont(Jimp.FONT_SANS_32_WHITE);
         const text = CONFIG.watermark.text;
         const textWidth = Jimp.measureText(font, text);
+        const textHeight = 40;
+        
         const imageWidth = image.getWidth();
         const imageHeight = image.getHeight();
         
-        // خلفية للعلامة المائية
+        // وضع العلامة في الزاوية السفلى اليمنى
+        const margin = 25;
+        const x = imageWidth - textWidth - margin;
+        const y = imageHeight - textHeight - margin;
+        
+        // خلفية شفافة للعلامة المائية
         const bgWidth = textWidth + 40;
-        const bgHeight = 60;
-        const x = imageWidth - bgWidth - 20;
-        const y = imageHeight - bgHeight - 20;
+        const bgHeight = textHeight + 20;
+        const background = new Jimp(bgWidth, bgHeight, 0x00000066); // شفافية 40%
         
-        const background = new Jimp(bgWidth, bgHeight, 0x000000aa);
+        // تأثير الظل
+        const shadow = new Jimp(bgWidth, bgHeight, 0x00000033);
+        image.composite(shadow, x + 2, y + 2);
         image.composite(background, x, y);
-        image.print(font, x + 20, y + 15, text);
         
+        // كتابة النص بخط جميل
+        image.print(font, x + 20, y + 10, text);
+        
+        // إضافة تأثير بسيط على الحواف
+        image.blur(1);
+        
+        console.log("✅ تمت معالجة الصورة بنجاح");
         return await image.getBase64Async(Jimp.MIME_JPEG);
     } catch (error) {
-        console.error("Image processing error:", error.message);
+        console.error("خطأ في معالجة الصورة:", error.message);
         return null;
     }
 }
 
 // ==========================================
-// تنظيف المحتوى
+// تنظيف المحتوى بشكل متقدم
 // ==========================================
 function cleanHtmlContent(html) {
     try {
         const $ = cheerio.load(html);
         
         // إزالة العناصر غير المرغوب فيها
-        $('script, style, iframe, nav, footer, header, aside, .ad, .advertisement, .social-share, .comments, .related, .newsletter, .popup, .cookie').remove();
+        $('script, style, iframe, nav, footer, header, aside, .ad, .advertisement, .social-share, .comments, .related, .newsletter, .popup, .cookie, .ads, .sponsored, .promo').remove();
         
-        // محاولة العثور على المحتوى الرئيسي
+        // إزالة الروابط التشعبية غير الضرورية
+        $('a').each((i, el) => {
+            const $el = $(el);
+            $el.replaceWith($el.text());
+        });
+        
+        // البحث عن المحتوى الرئيسي
         let content = '';
-        const selectors = ['article', '.post-content', '.entry-content', '.article-content', 'main', '.content'];
+        const selectors = ['article', '.post-content', '.entry-content', '.article-content', 'main', '.content', '#main-content'];
         
         for (const selector of selectors) {
             if ($(selector).length > 0) {
@@ -106,193 +133,367 @@ function cleanHtmlContent(html) {
             content = $('body').html();
         }
         
-        // استخراج النص فقط
+        // استخراج النص النظيف
         const text = cheerio.load(content).text();
         
-        // تنظيف النص
-        let cleanText = text.replace(/\s+/g, ' ').trim();
-        cleanText = cleanText.slice(0, 3000); // تحديد الطول
+        // تنظيف النص من الرموز الغريبة
+        let cleanText = text
+            .replace(/\s+/g, ' ')
+            .replace(/[^\x00-\x7F]/g, ' ')
+            .replace(/Join|Subscribe|Follow|Share|Like|Comment|Click|Link|Download/gi, '')
+            .replace(/http[s]?:\/\/[^\s]+/g, '')
+            .trim();
+        
+        // تحديد طول مناسب
+        cleanText = cleanText.slice(0, 3500);
         
         return cleanText;
     } catch (error) {
-        console.error("Clean HTML error:", error.message);
+        console.error("خطأ في تنظيف المحتوى:", error.message);
         return null;
     }
 }
 
 // ==========================================
-// تحسين المحتوى بالذكاء الاصطناعي
+// إعادة صياغة المحتوى بالذكاء الاصطناعي
 // ==========================================
 async function enhanceWithAI(title, cleanText) {
     try {
-        if (!cleanText || cleanText.length < 100) {
-            console.log("⚠️ Content too short, using fallback");
-            return `<p>${cleanText || "Content not available"}</p>`;
+        if (!cleanText || cleanText.length < 150) {
+            console.log("⚠️ المحتوى قصير جداً");
+            return `<p>${cleanText || "المحتوى غير متوفر"}</p>`;
         }
         
-        console.log("🤖 AI is processing content...");
+        console.log("🤖 الذكاء الاصطناعي يعيد صياغة المحتوى...");
         
-        const prompt = `Rewrite this tech article to be unique and well-structured:
+        const prompt = `Rewrite and enhance this tech article naturally in English:
 
 Title: ${title}
 
-Content: ${cleanText}
+Original Content: ${cleanText}
 
-IMPORTANT RULES:
-1. Use ONLY these HTML tags: <h2>, <h3>, <p>, <strong>, <em>, <ul>, <li>
-2. Start DIRECTLY with <p> tag
-3. Each major section MUST start with <h2>
-4. Keep paragraphs short (2-4 sentences)
-5. Write in natural English
-6. DO NOT include any meta-commentary or source references
+Requirements:
+1. Rewrite in your own words naturally
+2. Keep it informative and engaging
+3. Use only: <h2>, <h3>, <p>, <strong>, <em>, <ul>, <li>
+4. Start directly with <p>
+5. Each main idea as <h2>
+6. Short paragraphs (2-3 sentences)
+7. Professional but conversational tone
+8. NO promotional content
+9. NO "click here" or "subscribe"
+10. NO source references
 
-Example format:
-<p>Opening paragraph introducing the topic naturally.</p>
+Format:
+<p>Engaging opening paragraph...</p>
 
-<h2>First Major Section</h2>
-<p>Detailed explanation of the first point.</p>
-<p>Continue with supporting information.</p>
+<h2>First Key Point</h2>
+<p>Natural explanation...</p>
 
-<h2>Second Major Section</h2>
-<p>Continue with more detailed content...</p>
+<h2>Second Key Point</h2>
+<p>Continue naturally...</p>
 
-Now write the article:`;
+Write the rewritten article:`;
 
         const completion = await groq.chat.completions.create({
             messages: [
                 {
                     role: "system",
-                    content: "You are a professional tech writer. Output ONLY valid HTML content. Never include explanations. Start directly with HTML tags."
+                    content: "You are a professional tech writer. Rewrite articles naturally. Output ONLY clean HTML. Never include meta-commentary."
                 },
                 {
                     role: "user",
                     content: prompt
                 }
             ],
-            model: "mixtral-8x7b-32768", // نموذج محدث ومازال مدعوم
-            temperature: 0.7,
-            max_tokens: 2000
+            model: "mixtral-8x7b-32768",
+            temperature: 0.8,
+            max_tokens: 2500
         });
         
         let aiContent = completion.choices[0]?.message?.content || '';
         
-        if (!aiContent) {
-            throw new Error("AI returned empty content");
+        if (!aiContent || aiContent.length < 100) {
+            throw new Error("AI output too short");
         }
         
-        // تنظيف المحتوى
-        aiContent = aiContent.replace(/^(Here|I will|Let me|The following).*?[:!\n]/gi, '');
-        aiContent = aiContent.trim();
+        // تنظيف المحتوى من أي كلمات دعائية
+        aiContent = aiContent
+            .replace(/Here('s| is)|Let me|The following|I will|As an AI|I understand|Certainly|Absolutely/gi, '')
+            .replace(/Subscribe|Follow|Share|Comment|Like|Click|Link|Download|Newsletter|Join|Donate/gi, '')
+            .trim();
         
-        // التأكد من وجود محتوى
-        if (!aiContent || aiContent.length < 50) {
-            return `<p>${cleanText.slice(0, 500)}</p>`;
-        }
-        
-        // التأكد من وجود فقرات
+        // التأكد من وجود هيكل سليم
         if (!aiContent.includes('<p>') && !aiContent.includes('<h2>')) {
-            aiContent = `<p>${aiContent}</p>`;
+            aiContent = aiContent.split('\n\n').filter(p => p.trim().length > 20).map(p => `<p>${p.trim()}</p>`).join('');
         }
         
+        console.log("✅ تمت إعادة الصياغة بنجاح");
         return aiContent;
+        
     } catch (error) {
-        console.error("AI Error:", error.message);
-        // في حالة فشل AI، نعيد نص عادي
-        return `<p>${cleanText ? cleanText.slice(0, 1000) : "Content not available"}</p>`;
+        console.error("خطأ في الذكاء الاصطناعي:", error.message);
+        return `<p>${cleanText ? cleanText.slice(0, 800) : "المحتوى غير متوفر حالياً"}</p>`;
     }
 }
 
 // ==========================================
-// بناء HTML نهائي للمقال
+// بناء قالب احترافي وجذاب
 // ==========================================
 function buildArticleHTML(title, content, imageBase64) {
-    // تنظيف المحتوى من أي مشاكل
-    let cleanContent = content;
+    // تنظيف المحتوى النهائي
+    let finalContent = content;
     
-    // إضافة فقرات إذا لم توجد
-    if (cleanContent && !cleanContent.includes('<p>') && !cleanContent.includes('<h2>')) {
-        cleanContent = cleanContent.split('\n\n').filter(p => p.trim()).map(para => `<p>${para}</p>`).join('');
+    // إزالة أي شعارات أو علامات مائية نصية
+    finalContent = finalContent
+        .replace(/[📱🔗🤖✨🚀💡💻🎯⚡📊🎨🖼️✅❌⚠️📸🧹🏗️📤📖🖼️🧠🎉]/g, '')
+        .replace(/Stay updated|Auto-generated|informational purposes|latest tech news|Auto Blogger|Bot/i, '');
+    
+    // إضافة فقرات إذا لزم الأمر
+    if (finalContent && !finalContent.includes('<p>') && !finalContent.includes('<h2>')) {
+        finalContent = finalContent.split('\n\n').filter(p => p.trim()).map(para => `<p>${para.trim()}</p>`).join('');
     }
     
-    // بناء الصورة
+    // بناء الصورة بشكل احترافي
     const imageHTML = imageBase64 ? `
-        <div class="featured-image">
+        <div class="hero-image">
             <img src="${imageBase64}" alt="${title.replace(/[<>]/g, '')}" />
+            <div class="image-overlay"></div>
         </div>
     ` : '';
     
+    // قالب عصري وجذاب
     return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="${title.substring(0, 150)}" />
     <title>${title.replace(/[<>]/g, '')}</title>
     <style>
-        .post-body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-            line-height: 1.8;
-            color: #333;
-            max-width: 750px;
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 40px 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .article-container {
+            max-width: 900px;
             margin: 0 auto;
-            padding: 20px;
-            font-size: 18px;
+            background: white;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
         }
-        .post-body h2 {
-            font-size: 28px;
-            color: #2c3e50;
-            margin: 35px 0 15px 0;
-            padding-bottom: 10px;
-            border-bottom: 3px solid #3498db;
-            font-weight: 600;
+        
+        .hero-image {
+            position: relative;
+            width: 100%;
+            background: #f0f0f0;
+            overflow: hidden;
         }
-        .post-body h3 {
-            font-size: 24px;
-            color: #34495e;
-            margin: 25px 0 12px 0;
-            font-weight: 500;
-        }
-        .post-body p {
-            margin: 0 0 20px 0;
-            line-height: 1.8;
-        }
-        .post-body ul, .post-body ol {
-            margin: 15px 0 20px 30px;
-        }
-        .post-body li {
-            margin: 8px 0;
-        }
-        .post-body strong {
-            color: #2c3e50;
-            font-weight: 600;
-        }
-        .post-body .featured-image {
-            text-align: center;
-            margin: 20px 0 30px 0;
-        }
-        .post-body .featured-image img {
-            max-width: 100%;
+        
+        .hero-image img {
+            width: 100%;
             height: auto;
-            border-radius: 12px;
+            display: block;
+            transition: transform 0.3s ease;
+        }
+        
+        .hero-image:hover img {
+            transform: scale(1.02);
+        }
+        
+        .image-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.3) 100%);
+            pointer-events: none;
+        }
+        
+        .post-header {
+            padding: 40px 50px 20px 50px;
+            background: white;
+        }
+        
+        .post-title {
+            font-size: 42px;
+            line-height: 1.3;
+            color: #2d3748;
+            margin-bottom: 20px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+        
+        .post-meta {
+            display: flex;
+            gap: 20px;
+            color: #718096;
+            font-size: 14px;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 20px;
+        }
+        
+        .post-content {
+            padding: 0 50px 50px 50px;
+            background: white;
+        }
+        
+        .post-content h2 {
+            font-size: 32px;
+            color: #2d3748;
+            margin: 40px 0 20px 0;
+            padding-left: 15px;
+            border-left: 5px solid #667eea;
+            font-weight: 700;
+        }
+        
+        .post-content h3 {
+            font-size: 26px;
+            color: #4a5568;
+            margin: 30px 0 15px 0;
+            font-weight: 600;
+        }
+        
+        .post-content p {
+            font-size: 18px;
+            line-height: 1.8;
+            color: #4a5568;
+            margin-bottom: 25px;
+            text-align: justify;
+        }
+        
+        .post-content strong {
+            color: #667eea;
+            font-weight: 700;
+        }
+        
+        .post-content em {
+            background: #fef5e7;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-style: italic;
+        }
+        
+        .post-content ul, .post-content ol {
+            margin: 20px 0 25px 40px;
+        }
+        
+        .post-content li {
+            font-size: 18px;
+            line-height: 1.8;
+            color: #4a5568;
+            margin-bottom: 10px;
+        }
+        
+        .post-footer {
+            background: #f7fafc;
+            padding: 30px 50px;
+            text-align: center;
+            border-top: 1px solid #e2e8f0;
+        }
+        
+        .share-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .share-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: white;
+            border-radius: 25px;
+            text-decoration: none;
+            color: #4a5568;
+            transition: all 0.3s ease;
+            border: 1px solid #e2e8f0;
+        }
+        
+        .share-btn:hover {
+            transform: translateY(-2px);
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
+        
         @media (max-width: 768px) {
-            .post-body {
-                font-size: 16px;
-                padding: 15px;
+            body {
+                padding: 20px 10px;
             }
-            .post-body h2 { font-size: 24px; }
-            .post-body h3 { font-size: 20px; }
+            
+            .post-header {
+                padding: 25px 25px 15px 25px;
+            }
+            
+            .post-title {
+                font-size: 28px;
+            }
+            
+            .post-content {
+                padding: 0 25px 30px 25px;
+            }
+            
+            .post-content h2 {
+                font-size: 24px;
+            }
+            
+            .post-content h3 {
+                font-size: 20px;
+            }
+            
+            .post-content p, .post-content li {
+                font-size: 16px;
+            }
+            
+            .post-footer {
+                padding: 20px 25px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .post-title {
+                font-size: 24px;
+            }
+            
+            .post-meta {
+                flex-direction: column;
+                gap: 8px;
+            }
         }
     </style>
 </head>
 <body>
-    <div class='post-body'>
+    <div class="article-container">
         ${imageHTML}
-        ${cleanContent}
-        <div style="margin-top: 50px; padding-top: 20px; border-top: 2px solid #ecf0f1; text-align: center; font-size: 13px; color: #95a5a6;">
-            <p>📱 Stay updated with the latest tech news</p>
-            <p>🔗 Auto-generated content for informational purposes</p>
+        <div class="post-header">
+            <h1 class="post-title">${title.replace(/[<>]/g, '')}</h1>
+            <div class="post-meta">
+                <span>📅 ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                <span>⏱️ ${Math.ceil(finalContent.length / 1000)} min read</span>
+            </div>
+        </div>
+        <div class="post-content">
+            ${finalContent}
+        </div>
+        <div class="post-footer">
+            <p style="color: #718096; font-size: 14px;">Thank you for reading</p>
+            <div class="share-buttons">
+                <a href="#" class="share-btn">📘 Share</a>
+                <a href="#" class="share-btn">🐦 Tweet</a>
+                <a href="#" class="share-btn">💬 Comment</a>
+            </div>
         </div>
     </div>
 </body>
@@ -304,7 +505,7 @@ function buildArticleHTML(title, content, imageBase64) {
 // ==========================================
 async function publishToBlogger(title, content) {
     try {
-        console.log("📤 Publishing to Blogger...");
+        console.log("📤 جاري النشر على بلوجر...");
         
         const oauth2Client = new google.auth.OAuth2(
             CONFIG.blog.clientId,
@@ -322,19 +523,16 @@ async function publishToBlogger(title, content) {
             requestBody: {
                 title: title,
                 content: content,
-                labels: ['Technology', 'Auto Post', 'AI Generated'],
+                labels: ['Technology', 'Tech News', 'Article'],
                 status: 'LIVE'
             }
         });
         
-        console.log(`✅ Published successfully!`);
-        console.log(`📖 Post URL: ${result.data.url}`);
+        console.log(`✅ تم النشر بنجاح!`);
+        console.log(`📖 رابط المقال: ${result.data.url}`);
         return result.data;
     } catch (error) {
-        console.error("Blogger Error:", error.message);
-        if (error.response) {
-            console.error("Response data:", error.response.data);
-        }
+        console.error("خطأ في النشر:", error.message);
         throw error;
     }
 }
@@ -355,14 +553,21 @@ function extractImage($) {
     
     for (const selector of selectors) {
         const img = $(selector);
-        let url = img.attr('content') || img.attr('src') || img.attr('data-src');
-        if (url && !url.includes('logo') && !url.includes('icon') && !url.includes('avatar') && !url.includes('placeholder')) {
+        let url = img.attr('content') || img.attr('src') || img.attr('data-src') || img.attr('data-lazy-src');
+        
+        if (url && !url.includes('logo') && !url.includes('icon') && !url.includes('avatar') && 
+            !url.includes('placeholder') && !url.includes('spinner') && !url.includes('pixel')) {
+            
             if (url.startsWith('//')) {
                 url = 'https:' + url;
             } else if (!url.startsWith('http')) {
                 url = 'https://' + url;
             }
-            return url;
+            
+            // التأكد من أن الصورة حقيقية وليست أيقونة
+            if (url.match(/\.(jpg|jpeg|png|webp)/i) && !url.match(/\/icons\/|\/avatars\/|\/thumbnails\/small/)) {
+                return url;
+            }
         }
     }
     return null;
@@ -373,78 +578,76 @@ function extractImage($) {
 // ==========================================
 async function runAutoBlogger() {
     try {
-        console.log("\n🚀 Starting AutoBlogger System\n" + "=".repeat(50));
+        console.log("\n🚀 تشغيل نظام النشر التلقائي\n" + "=".repeat(50));
         
-        // 1. اختيار مصدر عشوائي
+        // اختيار مصدر عشوائي
         const randomSource = RSS_SOURCES[Math.floor(Math.random() * RSS_SOURCES.length)];
-        console.log(`📡 Fetching from: ${randomSource}`);
+        console.log(`📡 جلب من: ${randomSource}`);
         
         const feed = await parser.parseURL(randomSource);
         const article = feed.items[0];
         
         if (!article) {
-            throw new Error("No articles found");
+            throw new Error("لا توجد مقالات");
         }
         
-        console.log(`📰 Title: ${article.title}`);
-        console.log(`🔗 Link: ${article.link}`);
+        console.log(`📰 العنوان: ${article.title}`);
         
-        // 2. جلب المقال الكامل
-        console.log("🌐 Fetching full article...");
+        // جلب المقال الكامل
+        console.log("🌐 جلب المقال كاملاً...");
         const response = await axios.get(article.link, {
-            timeout: 15000,
+            timeout: 20000,
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5'
             }
         });
         
-        // 3. تنظيف المحتوى
-        console.log("🧹 Cleaning content...");
+        // تنظيف المحتوى
+        console.log("🧹 تنظيف المحتوى...");
         const cleanText = cleanHtmlContent(response.data);
         
         if (!cleanText) {
-            throw new Error("Failed to clean content");
+            throw new Error("فشل في تنظيف المحتوى");
         }
         
-        console.log(`📝 Content length: ${cleanText.length} characters`);
+        console.log(`📝 طول المحتوى: ${cleanText.length} حرف`);
         
-        // 4. معالجة الصورة
-        console.log("🖼️ Processing image...");
+        // معالجة الصورة
+        console.log("🖼️ معالجة الصورة...");
         const $ = cheerio.load(response.data);
         const imageUrl = extractImage($);
         let processedImage = null;
         
         if (imageUrl) {
-            console.log(`📸 Found image: ${imageUrl.substring(0, 100)}...`);
+            console.log(`📸 تم العثور على صورة: ${imageUrl.substring(0, 100)}...`);
             processedImage = await processImage(imageUrl);
-            if (processedImage) {
-                console.log("✅ Image processed successfully");
-            }
         } else {
-            console.log("⚠️ No image found in article");
+            console.log("⚠️ لم يتم العثور على صورة");
         }
         
-        // 5. تحسين المحتوى بالذكاء الاصطناعي
-        console.log("🧠 AI enhancement in progress...");
+        // إعادة صياغة المحتوى بالذكاء الاصطناعي
+        console.log("🧠 إعادة صياغة المحتوى...");
         const enhancedContent = await enhanceWithAI(article.title, cleanText);
         
-        console.log(`📄 Enhanced content length: ${enhancedContent.length} characters`);
+        console.log(`📄 طول المحتوى المعاد صياغته: ${enhancedContent.length} حرف`);
         
-        // 6. بناء HTML النهائي
-        console.log("🏗️ Building final HTML...");
+        // بناء القالب النهائي
+        console.log("🏗️ بناء القالب النهائي...");
         const finalHTML = buildArticleHTML(article.title, enhancedContent, processedImage);
         
-        // 7. النشر
+        // النشر
         await publishToBlogger(article.title, finalHTML);
         
         console.log("\n" + "=".repeat(50));
-        console.log("🎉 Success! Article published with perfect formatting!");
+        console.log("🎉 تم النشر بنجاح!");
         console.log("=".repeat(50) + "\n");
         
     } catch (error) {
-        console.error("\n❌ Fatal Error:", error.message);
+        console.error("\n❌ خطأ فادح:", error.message);
         if (error.stack) {
-            console.error("Stack:", error.stack);
+            console.error("التفاصيل:", error.stack);
         }
     }
 }
@@ -452,10 +655,10 @@ async function runAutoBlogger() {
 // ==========================================
 // تشغيل البوت
 // ==========================================
-console.log("🤖 AutoBlogger Bot Starting...");
-console.log(`📅 ${new Date().toLocaleString()}\n`);
+console.log("🤖 تشغيل نظام النشر التلقائي...");
+console.log(`📅 ${new Date().toLocaleString('ar-EG')}\n`);
 
 runAutoBlogger();
 
-// للتشغيل التلقائي كل 6 ساعات (اختياري)
-// setInterval(runAutoBlogger, 6 * 60 * 60 * 1000);
+// للتشغيل التلقائي كل 6 ساعات
+setInterval(runAutoBlogger, 6 * 60 * 60 * 1000);
