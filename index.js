@@ -1,129 +1,176 @@
-const Groq = require("groq-sdk");
-const { google } = require("googleapis");
-const Parser = require("rss-parser");
+const Parser = require('rss-parser');
+const axios = require('axios');
+const { JSDOM } = require('jsdom');
+const { Readability } = require('@mozilla/readability');
+const cheerio = require('cheerio');
+const { google } = require('googleapis');
+const Groq = require('groq-sdk');
 
+// ==========================================
+// إعداداتك الخاصة
+// ==========================================
+const BLOG_ID = "2636919176960128451"; // رقم مدونتك الجديد
+const CLIENT_ID = "872415365656-7qribadnc7k2u21kl6jjcbatdueevifh.apps.googleusercontent.com";
+const CLIENT_SECRET = "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";
+const REFRESH_TOKEN = "1//04yti9k2agPknCgYIARAAGAQSNwF-L9IrTZPKt5Fqbg2vrM9sBtOks9cnY4M7Idg0LToQnlbYGME06k20vcyr_SVmYk1H_yZJdEc";
+const GROQ_API_KEY = "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";
+
+const groq = new Groq({ apiKey: GROQ_API_KEY });
 const parser = new Parser();
 
-const CONFIG = {
-    groqKey: "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",
-    blogId: "8249860422330426533",
-    clientId: "872415365656-7qribadnc7k2u21kl6jjcbatdueevifh.apps.googleusercontent.com",
-    clientSecret: "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",
-    refreshToken: "1//04yti9k2agPknCgYIARAAGAQSNwF-L9IrTZPKt5Fqbg2vrM9sBtOks9cnY4M7Idg0LToQnlbYGME06k20vcyr_SVmYk1H_yZJdEc",
-    siteName: "Zyphora"
-};
+// رابط أخبار جوجل (هنا اخترنا أخبار التكنولوجيا العالمية - يمكنك تغييره)
+const GOOGLE_NEWS_RSS = 'https://news.google.com/rss/search?q=Technology+when:1d&hl=en-US&gl=US&ceid=US:en';
 
-// الأقسام الأكثر ربحاً ومتابعة في جوجل
-const NICHES = [
-    { id: "Make Money Online", searchQuery: '"passive income" OR "make money online" OR "affiliate marketing"', label: "Digital Wealth" },
-    { id: "Business & SaaS", searchQuery: '"business software" OR "SaaS" OR "productivity tools"', label: "Business & Apps" },
-    { id: "Cyber Security", searchQuery: '"cybersecurity" OR "network security" OR "privacy tools"', label: "Security & Tech" },
-    { id: "Tech Fix", searchQuery: '"how to fix" OR "troubleshooting" Windows OR Android OR iOS', label: "Tech Solutions" },
-    { id: "Web Hosting", searchQuery: '"best web hosting" OR "cloud computing" OR "website builder"', label: "Cloud & Web" }
-];
-
-const groq = new Groq({ apiKey: CONFIG.groqKey });
-
-async function runGroqPublisher() {
+// ==========================================
+// 1. دالة سحب المقال والصور باحترافية (وضع القراءة)
+// ==========================================
+async function scrapeArticle(url) {
     try {
-        // 1. اختيار قسم وسحب تريند حقيقي من Google News
-        const selectedNiche = NICHES[Math.floor(Math.random() * NICHES.length)];
-        console.log(`🔍 Fetching Trend for: ${selectedNiche.id}...`);
+        // جلب الصفحة (مع تتبع التحويلات لأن روابط جوجل نيوز تتحول للموقع الأصلي)
+        const response = await axios.get(url, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+            maxRedirects: 5
+        });
 
-        const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(selectedNiche.searchQuery)}+when:7d&hl=en-US&gl=US&ceid=US:en`;
-        let sourceTopic = `Top ${selectedNiche.label} Trends for 2026`;
+        const dom = new JSDOM(response.data, { url: response.request.res.responseUrl });
+        const reader = new Readability(dom.window.document);
+        const article = reader.parse();
 
-        try {
-            const feed = await parser.parseURL(rssUrl);
-            if (feed.items && feed.items.length > 0) {
-                sourceTopic = feed.items[Math.floor(Math.random() * Math.min(5, feed.items.length))].title;
+        if (!article) return null;
+
+        // استخراج جميع الصور من المقال الأصلي
+        const $ = cheerio.load(article.content);
+        const images = [];
+        $('img').each((i, el) => {
+            let src = $(el).attr('src') || $(el).attr('data-src');
+            if (src && src.startsWith('http') && !src.includes('icon') && !src.includes('logo')) {
+                images.push(src);
             }
-        } catch (e) { console.log("RSS error, using fallback."); }
-
-        // 2. إنشاء العنوان والمحتوى
-        const aiRestriction = "CRITICAL: Do NOT mention AI/ChatGPT unless the topic is explicitly about them. Focus on practical tools and business strategies.";
-        
-        console.log("📝 Generating Content...");
-        const contentRes = await groq.chat.completions.create({
-            messages: [{ 
-                role: "user", 
-                content: `Write a long-form SEO article (1500+ words) about: "${sourceTopic}". 
-                Template: <h1>Title</h1>, intro, <h2>headings</h2>, <h3>sub-headings</h3>, <p>paragraphs</p>, <ol> or <ul> lists, <strong>bold keywords</strong>, and internal links.
-                Include 2 external links to authority sites (e.g. Wikipedia, YouTube).
-                ${aiRestriction}
-                Output JSON: {"title": "Viral Title", "articleHtml": "HTML Content Content...", "labels": ["tag1", "tag2"]}`
-            }],
-            model: "llama-3.3-70b-versatile",
-            response_format: { type: "json_object" } 
         });
-        
-        const articleData = JSON.parse(contentRes.choices[0].message.content);
 
-        // 3. جلب الصورة
-        const imgDescRes = await groq.chat.completions.create({
-            messages: [{ role: "user", content: `A cinematic high-tech background for: "${articleData.title}". No text. 5 words.` }],
-            model: "llama-3.3-70b-versatile",
+        return {
+            title: article.title,
+            rawText: article.textContent.trim().slice(0, 4500), // النص النقي للـ AI
+            images: [...new Set(images)], // صور بدون تكرار
+            originalLink: response.request.res.responseUrl
+        };
+    } catch (error) {
+        console.error("❌ فشل سحب المقال:", error.message);
+        return null;
+    }
+}
+
+// ==========================================
+// 2. دالة إعادة الصياغة باستخدام الذكاء الاصطناعي
+// ==========================================
+async function formatWithAI(title, text) {
+    try {
+        console.log("🤖 جاري صياغة المقال بأسلوب صحفي...");
+        const completion = await groq.chat.completions.create({
+            messages: [
+                { 
+                    role: "system", 
+                    content: "You are a senior tech journalist. Rewrite the provided text to be a highly engaging, unique news article. Structure it clearly using <h2> for subtitles and <p> for paragraphs. DO NOT include images or code blocks. Make it sound professional and exciting. Language: English." 
+                },
+                { role: "user", content: `Title: ${title}\n\nContent: ${text}` }
+            ],
+            model: "llama3-8b-8192",
+            temperature: 0.7,
         });
-        const imgPrompt = encodeURIComponent(imgDescRes.choices[0].message.content.trim());
-        const finalImageUrl = `https://image.pollinations.ai/prompt/${imgPrompt}?width=1200&height=630&nologo=true`; 
+        return completion.choices[0]?.message?.content || text;
+    } catch (error) {
+        console.error("❌ فشل الذكاء الاصطناعي:", error.message);
+        return text;
+    }
+}
 
-        // 4. بناء الـ HTML النهائي بنفس التصميم المطلوب
-        const finalHtml = `
-            <style>
-                .seo-article-container { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.8; max-width: 1200px; margin: 0 auto; padding: 15px;}
-                .seo-article-image { width: 100%; max-width: 1200px; height: auto; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.15); margin-bottom: 30px; object-fit: cover;}
-                
-                .seo-article-content h1 { text-align: center; margin-bottom: 25px; font-size: 28px; font-weight: bold; color: #2980b9; }
-                .seo-article-content h2 { border-bottom: 2px solid rgba(128, 128, 128, 0.2); padding-bottom: 10px; margin-top: 30px; font-size: 24px; color: #3498db;}
-                .seo-article-content h3 { font-size: 20px; margin-top: 25px; opacity: 0.9;}
-                .seo-article-content p { font-size: 17px; margin-bottom: 18px; opacity: 0.85; }
-                
-                .seo-article-content a { color: #e74c3c; font-weight: bold; text-decoration: none; border-bottom: 1px dashed #e74c3c; padding-bottom: 2px;}
-                .seo-article-content a:hover { color: #c0392b; border-bottom-style: solid; }
-                
-                .seo-article-content ul, .seo-article-content ol { background-color: rgba(52, 152, 219, 0.05); padding: 20px 40px; border-radius: 8px; border-left: 5px solid #3498db; margin: 25px 0;}
-                .seo-article-content ul { list-style-type: disc;}
-                .seo-article-content ol { list-style-type: decimal;}
-                .seo-article-content li { margin-bottom: 12px; font-size: 16px; opacity: 0.85;}
-                
-                .seo-article-footer { text-align: center; font-style: italic; font-size: 14px; opacity: 0.6; margin-top: 40px; border-top: 1px solid rgba(128, 128, 128, 0.2); padding-top: 20px;}
-            </style>
+// ==========================================
+// 3. المحرك الرئيسي (تصميم خيالي + النشر)
+// ==========================================
+async function runGoogleNewsBot() {
+    try {
+        console.log("🚀 جاري البحث في أخبار جوجل تريندز...");
+        const feed = await parser.parseURL(GOOGLE_NEWS_RSS);
+        
+        // نأخذ خبر عشوائي من أول 10 أخبار تريند
+        const topArticles = feed.items.slice(0, 10);
+        const selectedNews = topArticles[Math.floor(Math.random() * topArticles.length)];
 
-            <div class="seo-article-container" dir="ltr">
-                <div style="text-align: center;">
-                    <a href="${finalImageUrl}" target="_blank">
-                        <img class="seo-article-image" src="${finalImageUrl}" alt="${articleData.title} - Blog Banner" loading="lazy">
-                    </a>
-                </div>
+        console.log(`📡 سحب الخبر: ${selectedNews.title}`);
+
+        const articleData = await scrapeArticle(selectedNews.link);
+        if (!articleData || articleData.rawText.length < 500) {
+            console.log("⏭️ محتوى ضعيف أو لم نتمكن من سحبه، سيتم المحاولة لاحقاً.");
+            return;
+        }
+
+        const finalContent = await formatWithAI(articleData.title, articleData.rawText);
+
+        // --- بناء التصميم الخيالي والحديث للمقال ---
+        // استخدام الصور التي تم سحبها (الصورة الأولى كغلاف، والباقي موزع)
+        const coverImage = articleData.images.length > 0 ? articleData.images[0] : 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&q=80';
+        
+        // تجهيز معرض صور مصغر لباقي الصور إن وجدت
+        let galleryHtml = "";
+        if (articleData.images.length > 1) {
+            galleryHtml = `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 30px;">`;
+            for (let i = 1; i < Math.min(articleData.images.length, 4); i++) {
+                galleryHtml += `<img src="${articleData.images[i]}" style="width: 100%; height: 150px; object-fit: cover; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); transition: transform 0.3s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'"/>`;
+            }
+            galleryHtml += `</div>`;
+        }
+
+        // كود HTML/CSS الحديث والاحترافي
+        const beautifulPostHtml = `
+            <div dir="ltr" style="background-color: #ffffff; padding: 30px; border-radius: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; max-width: 800px; margin: 0 auto; color: #2d3748; overflow: hidden;">
                 
-                <div class="seo-article-content">
-                    ${articleData.articleHtml}
+                <div style="position: relative; margin-bottom: 30px; border-radius: 16px; overflow: hidden; box-shadow: 0 8px 25px rgba(0,0,0,0.15);">
+                    <img src="${coverImage}" style="width: 100%; max-height: 450px; object-fit: cover; display: block;" alt="Article Cover"/>
+                    <div style="position: absolute; bottom: 15px; left: 15px; background: rgba(0,0,0,0.7); color: #fff; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; backdrop-filter: blur(5px);">
+                        🔥 TRENDING NOW
+                    </div>
                 </div>
-                
-                <div class="seo-article-footer">
-                    <p>Crafted dynamically by ${CONFIG.siteName} AI Engine 2026</p>
+
+                <div style="line-height: 1.85; font-size: 1.1rem;">
+                    <style>
+                        h2 { color: #1a202c; font-size: 1.6rem; font-weight: 800; border-left: 5px solid #3b82f6; padding-left: 15px; margin-top: 40px; margin-bottom: 20px; }
+                        p { margin-bottom: 25px; color: #4a5568; }
+                        p:first-of-type { font-size: 1.25rem; font-weight: 500; color: #2d3748; letter-spacing: -0.01em; }
+                    </style>
+                    ${finalContent}
+                </div>
+
+                ${galleryHtml}
+
+                <div style="margin-top: 50px; padding-top: 20px; border-top: 2px dashed #e2e8f0; display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; color: #718096;">
+                    <span>🤖 Authored & Curated by AI</span>
+                    <a href="${articleData.originalLink}" target="_blank" style="color: #3b82f6; text-decoration: none; font-weight: 600; padding: 8px 16px; background: #ebf8ff; border-radius: 20px; transition: all 0.3s;">Read Original Source ↗</a>
                 </div>
             </div>
         `;
 
-        // 5. النشر
-        const oauth2Client = new google.auth.OAuth2(CONFIG.clientId, CONFIG.clientSecret);
-        oauth2Client.setCredentials({ refresh_token: CONFIG.refreshToken });
-        const blogger = google.blogger({ version: "v3", auth: oauth2Client });
+        // ==========================================
+        // 4. النشر على بلوجر
+        // ==========================================
+        const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET);
+        oauth2Client.setCredentials({ refresh_token: REFRESH_TOKEN });
+        const blogger = google.blogger({ version: 'v3', auth: oauth2Client });
 
         await blogger.posts.insert({
-            blogId: CONFIG.blogId,
-            requestBody: { 
-                title: articleData.title, 
-                content: finalHtml, 
-                labels: [...new Set([...articleData.labels, selectedNiche.id])]
-            }
+            blogId: BLOG_ID,
+            requestBody: {
+                title: articleData.title,
+                content: beautifulPostHtml,
+                labels: ['Google News', 'Trending', 'Tech Update']
+            },
+            isDraft: false
         });
 
-        console.log(`✨ Published: ${articleData.title}`);
+        console.log("✅ تم النشر بنجاح! اذهب لتفقد مدونتك لترى التصميم الخيالي.");
+
     } catch (error) {
-        console.error("🔴 Error:", error.message);
+        console.error("❌ خطأ فادح:", error.message);
     }
 }
 
-runGroqPublisher();
+runGoogleNewsBot();
