@@ -2,8 +2,8 @@ name: Blogger Empire Automation
 
 on:
   schedule:
-    - cron: '0 */6 * * *' # يعمل كل 6 ساعات
-  workflow_dispatch: # زر لتشغيله يدوياً
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
 
 jobs:
   run-bot:
@@ -20,12 +20,6 @@ jobs:
       - name: Install Dependencies
         run: |
           npm install --force
-          npm install jimp # لضمان تثبيت مكتبة الصور بشكل مستقل إذا لزم الأمر
 
       - name: Execution
-        env:
-          BLOG_ID: ${{ secrets.BLOG_ID }}
-          CLIENT_ID: ${{ secrets.CLIENT_ID }}
-          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-          REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
         run: node index.js
