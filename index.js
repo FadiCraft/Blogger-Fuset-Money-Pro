@@ -19,438 +19,426 @@ const CONFIG = {
         apiKey: "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"
     },
     watermark: {
-        text: "© TRENDING TECH UPDATE",
-        position: 'bottom', // bottom, center, top
-        opacity: 0.6
-    },
-    content: {
-        maxLength: 3500,
-        minLength: 500
+        text: "© fadi craft",
+        position: 'bottom'
     }
 };
 
-// قائمة المصادر مع أولويات
+// قائمة المصادر
 const RSS_SOURCES = [
-    { url: 'https://www.makeuseof.com/feed/', priority: 1 },
-    { url: 'https://fossbytes.com/feed/', priority: 2 },
-    { url: 'https://www.howtogeek.com/feed/', priority: 1 },
-    { url: 'https://www.techradar.com/rss', priority: 1 },
-    { url: 'https://www.gadgetstouse.com/feed/', priority: 2 },
-    { url: 'https://www.theverge.com/rss/index.xml', priority: 1 }
+    'https://www.makeuseof.com/feed/',
+    'https://fossbytes.com/feed/',
+    'https://www.howtogeek.com/feed/',
+    'https://www.techradar.com/rss',
+    'https://www.theverge.com/rss/index.xml'
 ];
 
-// إعدادات الـ API
 const groq = new Groq({ apiKey: CONFIG.groq.apiKey });
-const parser = new Parser({
-    timeout: 10000,
-    headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'
-    }
-});
+const parser = new Parser();
 
 // ==========================================
-// نظام Logging احترافي
+// معالجة الصور
 // ==========================================
-const Logger = {
-    info: (msg) => console.log(`✅ ${new Date().toISOString()} - ${msg}`),
-    error: (msg) => console.error(`❌ ${new Date().toISOString()} - ${msg}`),
-    warn: (msg) => console.warn(`⚠️ ${new Date().toISOString()} - ${msg}`),
-    process: (msg) => console.log(`🔄 ${new Date().toISOString()} - ${msg}`)
-};
-
-// ==========================================
-// معالجة الصور بشكل احترافي
-// ==========================================
-class ImageProcessor {
-    static async downloadImage(url) {
-        try {
-            const response = await axios({
-                method: 'get',
-                url: url,
-                responseType: 'arraybuffer',
-                timeout: 15000,
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                }
-            });
-            return Buffer.from(response.data, 'binary');
-        } catch (error) {
-            throw new Error(`Failed to download image: ${error.message}`);
-        }
-    }
-
-    static async addProfessionalWatermark(imageBuffer, text) {
-        try {
-            const image = await Jimp.read(imageBuffer);
-            
-            // تحسين جودة الصورة
-            if (image.getWidth() > 1200) {
-                image.resize(1200, Jimp.AUTO);
-            }
-            
-            // تحسين التباين والسطوع بشكل خفيف
-            image.contrast(0.05);
-            image.brightness(0.02);
-            
-            // تحميل الخط المناسب
-            const font = await Jimp.loadFont(Jimp.FONT_SANS_32_WHITE);
-            const smallFont = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE);
-            
-            const textWidth = Jimp.measureText(font, text);
-            const textHeight = Jimp.measureTextHeight(font, text);
-            const imageWidth = image.getWidth();
-            const imageHeight = image.getHeight();
-            
-            // إنشاء خلفية شفافة للعلامة المائية
-            const padding = 20;
-            const bgWidth = textWidth + (padding * 2);
-            const bgHeight = textHeight + (padding * 1.5);
-            
-            // موقع العلامة المائية (أسفل اليمين)
-            const x = imageWidth - bgWidth - 20;
-            const y = imageHeight - bgHeight - 20;
-            
-            // إضافة خلفية شفافة
-            const background = new Jimp(bgWidth, bgHeight, 0x00000099);
-            image.composite(background, x, y);
-            
-            // إضافة النص
-            image.print(
-                font,
-                x + padding,
-                y + (bgHeight / 2) - (textHeight / 2),
-                text
-            );
-            
-            // إضافة نص صغير في الأسفل (اختياري)
-            const footerText = "AI Optimized Content";
-            const footerWidth = Jimp.measureText(smallFont, footerText);
-            image.print(
-                smallFont,
-                imageWidth - footerWidth - 10,
-                imageHeight - 25,
-                footerText
-            );
-            
-            return await image.getBase64Async(Jimp.MIME_JPEG);
-        } catch (error) {
-            Logger.error(`Watermark failed: ${error.message}`);
-            return null;
-        }
-    }
-}
-
-// ==========================================
-// معالجة المحتوى
-// ==========================================
-class ContentProcessor {
-    static cleanHtml(html) {
-        try {
-            const $ = cheerio.load(html);
-            
-            // إزالة العناصر غير المرغوب فيها
-            const removeSelectors = [
-                'script', 'style', 'iframe', 'noscript', 'nav', 'footer',
-                'header', 'aside', '.advertisement', '.ads', '.social-share',
-                '.comments', '.related-posts', '.newsletter', '.popup',
-                '[class*="ad"]', '[id*="ad"]', '.cookie-notice'
-            ];
-            
-            removeSelectors.forEach(selector => {
-                $(selector).remove();
-            });
-            
-            // استخراج النص الرئيسي
-            let text = $('article').text() || 
-                      $('.entry-content').text() || 
-                      $('.post-content').text() || 
-                      $('main').text() || 
-                      $('body').text();
-            
-            // تنظيف النص
-            text = text.replace(/\s+/g, ' ')
-                      .replace(/[^\w\s.,!?;:()\-]/g, '')
-                      .trim();
-            
-            // إزالة التكرارات
-            const sentences = text.split(/[.!?]+/);
-            const uniqueSentences = [...new Set(sentences)];
-            text = uniqueSentences.join('. ');
-            
-            return text.slice(0, CONFIG.content.maxLength);
-        } catch (error) {
-            Logger.error(`HTML cleaning failed: ${error.message}`);
-            return null;
-        }
-    }
-    
-    static async enhanceWithAI(title, content) {
-        try {
-            const prompt = `You are a professional tech content writer. Rewrite this article to be unique and engaging:
-            
-Title: ${title}
-
-Content: ${content}
-
-Requirements:
-1. Make it 100% unique and original
-2. Use proper HTML formatting (h2 for headings, p for paragraphs)
-3. Add relevant emojis where appropriate
-4. Keep professional tone but engaging
-5. Length: 800-1500 words
-6. Add a compelling introduction and conclusion
-7. Remove any dates, author names, or references to original source
-8. Optimize for SEO with natural keyword placement
-
-Start directly with the content, no meta-commentary.`;
-
-            const completion = await groq.chat.completions.create({
-                messages: [
-                    {
-                        role: "system",
-                        content: "You are an expert tech journalist and SEO specialist. Create unique, high-quality content that passes as original."
-                    },
-                    {
-                        role: "user",
-                        content: prompt
-                    }
-                ],
-                model: "mixtral-8x7b-32768",
-                temperature: 0.7,
-                max_tokens: 2000
-            });
-            
-            return completion.choices[0]?.message?.content || content;
-        } catch (error) {
-            Logger.error(`AI enhancement failed: ${error.message}`);
-            return content;
-        }
-    }
-}
-
-// ==========================================
-// إدارة المصادر
-// ==========================================
-class SourceManager {
-    static async getBestSource() {
-        const sortedSources = [...RSS_SOURCES].sort((a, b) => a.priority - b.priority);
+async function processImage(imageUrl) {
+    try {
+        if (!imageUrl) return null;
         
-        for (const source of sortedSources) {
-            try {
-                const feed = await parser.parseURL(source.url);
-                if (feed.items && feed.items.length > 0) {
-                    return { source: source.url, feed };
-                }
-            } catch (error) {
-                Logger.warn(`Failed to fetch ${source.url}: ${error.message}`);
-                continue;
-            }
+        console.log("📸 Processing image...");
+        const response = await axios({
+            method: 'get',
+            url: imageUrl,
+            responseType: 'arraybuffer',
+            timeout: 10000
+        });
+        
+        const image = await Jimp.read(Buffer.from(response.data));
+        
+        // تحسين الصورة
+        if (image.getWidth() > 800) {
+            image.resize(800, Jimp.AUTO);
         }
+        
+        // إضافة علامة مائية
+        const font = await Jimp.loadFont(Jimp.FONT_SANS_32_WHITE);
+        const text = CONFIG.watermark.text;
+        const textWidth = Jimp.measureText(font, text);
+        const imageWidth = image.getWidth();
+        const imageHeight = image.getHeight();
+        
+        // خلفية للعلامة المائية
+        const bgWidth = textWidth + 40;
+        const bgHeight = 60;
+        const x = imageWidth - bgWidth - 20;
+        const y = imageHeight - bgHeight - 20;
+        
+        const background = new Jimp(bgWidth, bgHeight, 0x000000aa);
+        image.composite(background, x, y);
+        image.print(font, x + 20, y + 15, text);
+        
+        return await image.getBase64Async(Jimp.MIME_JPEG);
+    } catch (error) {
+        console.error("Image processing error:", error.message);
         return null;
     }
-    
-    static extractMainImage($) {
-        const selectors = [
-            'meta[property="og:image"]',
-            'meta[name="twitter:image"]',
-            'article img',
-            '.entry-content img',
-            'main img',
-            'img.wp-image',
-            '.featured-image img'
-        ];
+}
+
+// ==========================================
+// تنظيف المحتوى
+// ==========================================
+function cleanHtmlContent(html) {
+    try {
+        const $ = cheerio.load(html);
+        
+        // إزالة العناصر غير المرغوب فيها
+        $('script, style, iframe, nav, footer, header, aside, .ad, .advertisement, .social-share, .comments, .related, .newsletter, .popup, .cookie').remove();
+        
+        // محاولة العثور على المحتوى الرئيسي
+        let content = '';
+        const selectors = ['article', '.post-content', '.entry-content', '.article-content', 'main', '.content'];
         
         for (const selector of selectors) {
-            const imgUrl = $(selector).attr('content') || $(selector).attr('src');
-            if (imgUrl && !imgUrl.includes('logo') && !imgUrl.includes('icon')) {
-                return imgUrl;
+            if ($(selector).length > 0) {
+                content = $(selector).html();
+                break;
             }
         }
-        return null;
+        
+        if (!content) {
+            content = $('body').html();
+        }
+        
+        // تنظيف النص
+        content = content.replace(/\s+/g, ' ').trim();
+        
+        // إزالة الروابط المشبوهة والإعلانات
+        $('a[rel="sponsored"], a[href*="ad"], a[href*="click"]').remove();
+        
+        return content;
+    } catch (error) {
+        console.error("Clean HTML error:", error.message);
+        return html;
     }
+}
+
+// ==========================================
+// تحسين المحتوى بالذكاء الاصطناعي
+// ==========================================
+async function enhanceWithAI(title, content) {
+    try {
+        console.log("🤖 AI is processing content...");
+        
+        // تنظيف المحتوى أولاً
+        const cleanText = cheerio.load(content).text().slice(0, 3000);
+        
+        const prompt = `Rewrite this tech article to be unique and well-structured:
+
+Title: ${title}
+
+Content: ${cleanText}
+
+IMPORTANT FORMATTING RULES:
+1. Use ONLY these HTML tags: <h2>, <h3>, <p>, <strong>, <em>, <ul>, <li>
+2. Start DIRECTLY with <p> tag - NO introduction phrases like "Here is" or "I will"
+3. Each major section MUST start with <h2> tag
+4. Use <h3> for subsections
+5. Add 2-3 paragraphs between headings
+6. Use <ul> for lists when appropriate
+7. Keep paragraphs short (2-4 sentences each)
+8. DO NOT include any meta-commentary, author notes, or source references
+9. DO NOT include the word "rewritten" or "original" in the content
+10. Write in natural, flowing English
+
+Example of correct format:
+<p>Here is the opening paragraph that introduces the topic naturally.</p>
+
+<h2>First Major Section</h2>
+<p>Detailed explanation of the first point with multiple sentences.</p>
+<p>Continue with supporting information and examples.</p>
+
+<h2>Second Major Section</h2>
+<p>Continue with more detailed content...</p>
+
+Now write the article following these rules exactly:`;
+
+        const completion = await groq.chat.completions.create({
+            messages: [
+                {
+                    role: "system",
+                    content: "You are a professional tech writer. Output ONLY valid HTML content. Never include explanations or meta comments. Start directly with HTML tags."
+                },
+                {
+                    role: "user",
+                    content: prompt
+                }
+            ],
+            model: "llama3-8b-8192",
+            temperature: 0.7,
+            max_tokens: 2500
+        });
+        
+        let aiContent = completion.choices[0]?.message?.content || '';
+        
+        // تنظيف إضافي للمحتوى من الـ AI
+        aiContent = aiContent.replace(/^(Here|I will|Let me|The following|Below is).*?(rewritten|article|content).*?[:!\n]/i, '');
+        aiContent = aiContent.replace(/\[.*?\]/g, '');
+        aiContent = aiContent.replace(/\(.*?\)/g, '');
+        aiContent = aiContent.trim();
+        
+        // التأكد من أن المحتوى يبدأ بـ HTML tag صحيح
+        if (!aiContent.match(/^<(p|h2|h3|ul)/i)) {
+            aiContent = `<p>${aiContent}</p>`;
+        }
+        
+        return aiContent;
+    } catch (error) {
+        console.error("AI Error:", error.message);
+        return `<p>${cleanText}</p>`;
+    }
+}
+
+// ==========================================
+// بناء HTML نهائي للمقال
+// ==========================================
+function buildArticleHTML(title, content, imageBase64) {
+    // تنظيف المحتوى من أي مشاكل في التنسيق
+    let cleanContent = content;
+    
+    // التأكد من وجود فقرات
+    if (!cleanContent.includes('<p>')) {
+        cleanContent = cleanContent.split('\n\n').map(para => `<p>${para}</p>`).join('');
+    }
+    
+    // التأكد من أن العناوين بالتنسيق الصحيح
+    cleanContent = cleanContent.replace(/##\s+(.+)/g, '<h2>$1</h2>');
+    cleanContent = cleanContent.replace(/###\s+(.+)/g, '<h3>$1</h3>');
+    
+    // بناء الصورة
+    const imageHTML = imageBase64 ? `
+        <div style="text-align: center; margin: 20px 0;">
+            <img src="${imageBase64}" 
+                 alt="${title}"
+                 style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);" />
+        </div>
+    ` : '';
+    
+    // بناء الهيكل النهائي
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:b="http://www.google.com/2005/gml/b" xmlns:data="http://www.google.com/2005/gml/data" xmlns:expr="http://www.google.com/2005/gml/expr">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${title}</title>
+    <style>
+        /* بلوجر ستايل متوافق */
+        .post-body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.8;
+            color: #333;
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 20px;
+            font-size: 18px;
+        }
+        .post-body h2 {
+            font-size: 28px;
+            color: #2c3e50;
+            margin: 30px 0 15px 0;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #3498db;
+            font-weight: 600;
+        }
+        .post-body h3 {
+            font-size: 24px;
+            color: #34495e;
+            margin: 25px 0 12px 0;
+            font-weight: 500;
+        }
+        .post-body p {
+            margin: 0 0 20px 0;
+            text-align: left;
+        }
+        .post-body ul, .post-body ol {
+            margin: 15px 0 20px 30px;
+            padding: 0;
+        }
+        .post-body li {
+            margin: 8px 0;
+        }
+        .post-body strong {
+            color: #2c3e50;
+            font-weight: 600;
+        }
+        .post-body em {
+            font-style: italic;
+            color: #7f8c8d;
+        }
+        .post-body img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .post-body .featured-image {
+            text-align: center;
+            margin: 20px 0 30px 0;
+        }
+        @media (max-width: 768px) {
+            .post-body {
+                font-size: 16px;
+                padding: 15px;
+            }
+            .post-body h2 { font-size: 24px; }
+            .post-body h3 { font-size: 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class='post-body'>
+        ${imageHTML}
+        ${cleanContent}
+        <div style="margin-top: 50px; padding-top: 20px; border-top: 1px solid #ecf0f1; text-align: center; font-size: 14px; color: #95a5a6;">
+            <p>📱 Tech News • Auto Published • Stay Updated</p>
+        </div>
+    </div>
+</body>
+</html>`;
 }
 
 // ==========================================
 // النشر على بلوجر
 // ==========================================
-class BloggerPublisher {
-    static async setupAuth() {
+async function publishToBlogger(title, content) {
+    try {
+        console.log("📤 Publishing to Blogger...");
+        
         const oauth2Client = new google.auth.OAuth2(
             CONFIG.blog.clientId,
             CONFIG.blog.clientSecret
         );
+        
         oauth2Client.setCredentials({
             refresh_token: CONFIG.blog.refreshToken
         });
-        return google.blogger({ version: 'v3', auth: oauth2Client });
+        
+        const blogger = google.blogger({ version: 'v3', auth: oauth2Client });
+        
+        const result = await blogger.posts.insert({
+            blogId: CONFIG.blog.id,
+            requestBody: {
+                title: title,
+                content: content,
+                labels: ['Technology', 'Auto Post', 'AI Generated'],
+                status: 'LIVE'
+            }
+        });
+        
+        console.log(`✅ Published successfully!`);
+        console.log(`📖 Post URL: ${result.data.url}`);
+        return result.data;
+    } catch (error) {
+        console.error("Blogger Error:", error.message);
+        throw error;
     }
+}
+
+// ==========================================
+// استخراج الصورة الرئيسية
+// ==========================================
+function extractImage($) {
+    const selectors = [
+        'meta[property="og:image"]',
+        'meta[name="twitter:image"]',
+        'article img:first',
+        '.post-content img:first',
+        '.entry-content img:first',
+        'img:first'
+    ];
     
-    static async publish(postData) {
-        try {
-            const blogger = await this.setupAuth();
-            
-            const styledContent = `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1">
-                    <style>
-                        body {
-                            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-                            line-height: 1.8;
-                            color: #2c3e50;
-                            max-width: 800px;
-                            margin: 0 auto;
-                            padding: 20px;
-                        }
-                        h1 { font-size: 2em; color: #2c3e50; margin: 1em 0 0.5em; }
-                        h2 { font-size: 1.5em; color: #34495e; margin: 1.2em 0 0.8em; border-bottom: 2px solid #ecf0f1; padding-bottom: 0.3em; }
-                        h3 { font-size: 1.3em; color: #7f8c8d; margin: 1em 0 0.5em; }
-                        p { margin: 1em 0; text-align: justify; }
-                        img { max-width: 100%; height: auto; border-radius: 10px; margin: 1.5em 0; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-                        .featured-image { text-align: center; margin: 2em 0; }
-                        blockquote { border-left: 4px solid #3498db; margin: 1.5em 0; padding: 0.5em 0 0.5em 2em; background: #f8f9fa; }
-                        code { background: #f4f4f4; padding: 0.2em 0.4em; border-radius: 3px; font-family: monospace; }
-                        pre { background: #f4f4f4; padding: 1em; border-radius: 5px; overflow-x: auto; }
-                        .footer { margin-top: 3em; padding-top: 1em; border-top: 1px solid #ecf0f1; font-size: 0.9em; color: #95a5a6; text-align: center; }
-                        @media (max-width: 600px) { body { padding: 10px; font-size: 16px; } }
-                    </style>
-                </head>
-                <body>
-                    ${postData.imageHtml}
-                    <article>
-                        ${postData.content}
-                    </article>
-                    <div class="footer">
-                        <p>✨ AI Optimized Content • Published Automatically ✨</p>
-                    </div>
-                </body>
-                </html>
-            `;
-            
-            const result = await blogger.posts.insert({
-                blogId: CONFIG.blog.id,
-                requestBody: {
-                    title: postData.title,
-                    content: styledContent,
-                    labels: ['Technology', 'AI Generated', 'Auto-Post'],
-                    status: 'LIVE'
-                }
-            });
-            
-            return result.data;
-        } catch (error) {
-            throw new Error(`Blogger publish failed: ${error.message}`);
+    for (const selector of selectors) {
+        const img = $(selector);
+        let url = img.attr('content') || img.attr('src');
+        if (url && !url.includes('logo') && !url.includes('icon') && !url.includes('avatar')) {
+            if (!url.startsWith('http')) {
+                url = 'https:' + url;
+            }
+            return url;
         }
     }
+    return null;
 }
 
 // ==========================================
 // المحرك الرئيسي
 // ==========================================
-class AutoBlogger {
-    static async run() {
-        try {
-            Logger.info("Starting AutoBlogger Engine v2.0");
-            
-            // 1. جلب أفضل مصدر
-            Logger.process("Fetching best RSS source...");
-            const sourceData = await SourceManager.getBestSource();
-            
-            if (!sourceData || !sourceData.feed.items[0]) {
-                throw new Error("No valid RSS sources available");
-            }
-            
-            const article = sourceData.feed.items[0];
-            Logger.info(`Selected article: ${article.title}`);
-            
-            // 2. جلب المحتوى الكامل
-            Logger.process("Fetching full article content...");
-            const response = await axios.get(article.link, {
-                timeout: 15000,
-                headers: { 'User-Agent': 'Mozilla/5.0 (compatible; BlogBot/1.0)' }
-            });
-            
-            const $ = cheerio.load(response.data);
-            
-            // 3. تنظيف المحتوى
-            Logger.process("Cleaning and processing content...");
-            const cleanContent = ContentProcessor.cleanHtml($.html());
-            
-            if (!cleanContent || cleanContent.length < CONFIG.content.minLength) {
-                throw new Error(`Content too short (${cleanContent?.length || 0} chars)`);
-            }
-            
-            // 4. تحسين المحتوى بالذكاء الاصطناعي
-            Logger.process("Enhancing content with AI...");
-            const enhancedContent = await ContentProcessor.enhanceWithAI(article.title, cleanContent);
-            
-            // 5. معالجة الصورة
-            Logger.process("Processing featured image...");
-            let imageHtml = '';
-            const imageUrl = SourceManager.extractMainImage($);
-            
-            if (imageUrl) {
-                try {
-                    const imageBuffer = await ImageProcessor.downloadImage(imageUrl);
-                    const watermarkedImage = await ImageProcessor.addProfessionalWatermark(
-                        imageBuffer,
-                        CONFIG.watermark.text
-                    );
-                    
-                    if (watermarkedImage) {
-                        imageHtml = `<div class="featured-image"><img src="${watermarkedImage}" alt="${article.title}" loading="lazy"/></div>`;
-                    }
-                } catch (error) {
-                    Logger.warn(`Image processing failed: ${error.message}`);
-                }
-            }
-            
-            // 6. النشر على بلوجر
-            Logger.process("Publishing to Blogger...");
-            const publishResult = await BloggerPublisher.publish({
-                title: article.title,
-                content: enhancedContent,
-                imageHtml: imageHtml
-            });
-            
-            Logger.info(`✅ Article published successfully! URL: ${publishResult.url}`);
-            
-        } catch (error) {
-            Logger.error(`Fatal error: ${error.message}`);
-            throw error;
+async function runAutoBlogger() {
+    try {
+        console.log("\n🚀 Starting AutoBlogger System\n" + "=".repeat(50));
+        
+        // 1. اختيار مصدر عشوائي
+        const randomSource = RSS_SOURCES[Math.floor(Math.random() * RSS_SOURCES.length)];
+        console.log(`📡 Fetching from: ${randomSource}`);
+        
+        const feed = await parser.parseURL(randomSource);
+        const article = feed.items[0];
+        
+        if (!article) {
+            throw new Error("No articles found");
         }
-    }
-}
-
-// ==========================================
-// تشغيل النظام مع إعادة المحاولات
-// ==========================================
-async function main() {
-    const MAX_RETRIES = 3;
-    const RETRY_DELAY = 5000;
-    
-    for (let i = 0; i < MAX_RETRIES; i++) {
-        try {
-            await AutoBlogger.run();
-            break;
-        } catch (error) {
-            Logger.error(`Attempt ${i + 1} failed: ${error.message}`);
-            if (i < MAX_RETRIES - 1) {
-                Logger.process(`Retrying in ${RETRY_DELAY/1000} seconds...`);
-                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
-            } else {
-                Logger.error("All attempts failed. Exiting.");
-                process.exit(1);
+        
+        console.log(`📰 Title: ${article.title}`);
+        console.log(`🔗 Link: ${article.link}`);
+        
+        // 2. جلب المقال الكامل
+        console.log("🌐 Fetching full article...");
+        const response = await axios.get(article.link, {
+            timeout: 15000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        });
+        
+        // 3. تنظيف المحتوى
+        console.log("🧹 Cleaning content...");
+        const $ = cheerio.load(response.data);
+        let cleanedContent = cleanHtmlContent(response.data);
+        
+        // 4. معالجة الصورة
+        console.log("🖼️ Processing image...");
+        const imageUrl = extractImage($);
+        let processedImage = null;
+        
+        if (imageUrl) {
+            processedImage = await processImage(imageUrl);
+            if (processedImage) {
+                console.log("✅ Image processed successfully");
             }
         }
+        
+        // 5. تحسين المحتوى بالذكاء الاصطناعي
+        console.log("🧠 AI enhancement in progress...");
+        const enhancedContent = await enhanceWithAI(article.title, cleanedContent);
+        
+        // 6. بناء HTML النهائي
+        console.log("🏗️ Building final HTML...");
+        const finalHTML = buildArticleHTML(article.title, enhancedContent, processedImage);
+        
+        // 7. النشر
+        console.log("📤 Publishing to Blogger...");
+        await publishToBlogger(article.title, finalHTML);
+        
+        console.log("\n" + "=".repeat(50));
+        console.log("🎉 Success! Article published with perfect formatting!");
+        console.log("=".repeat(50) + "\n");
+        
+    } catch (error) {
+        console.error("\n❌ Fatal Error:", error.message);
+        console.error("Stack:", error.stack);
     }
 }
 
 // تشغيل البوت
-if (require.main === module) {
-    main().catch(console.error);
-}
+runAutoBlogger();
 
-module.exports = { AutoBlogger, ContentProcessor, ImageProcessor };
+// جدولة التشغيل كل 6 ساعات (اختياري)
+// setInterval(runAutoBlogger, 6 * 60 * 60 * 1000);
