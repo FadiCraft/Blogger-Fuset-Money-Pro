@@ -1,25 +1,25 @@
-name: Blogger Empire Automation
+name: AI Publisher
 
 on:
   schedule:
-    - cron: '0 */6 * * *'
-  workflow_dispatch:
+    - cron: '0 */4 * * *'   # يعمل كل 4 ساعات تلقائياً
+  workflow_dispatch:        # يتيح لك تشغيله يدوياً بنقرة زر
 
 jobs:
-  run-bot:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
-          npm install --force
+          npm install groq-sdk googleapis rss-parser
 
-      - name: Execution
+      - name: Run publisher
         run: node index.js
