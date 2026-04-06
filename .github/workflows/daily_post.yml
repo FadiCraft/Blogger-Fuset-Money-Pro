@@ -2,7 +2,7 @@ name: Google News Blogger Bot
 
 on:
   schedule:
-    - cron: '0 */4 * * *' # ينشر خبر كل 4 ساعات لتواكب التريند
+    - cron: '0 */1 * * *' # ينشر خبر كل 4 ساعات لتواكب التريند
   workflow_dispatch:
 
 jobs:
