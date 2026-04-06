@@ -1,4 +1,3 @@
-
 const Parser = require('rss-parser');
 const axios = require('axios');
 const { JSDOM } = require('jsdom');
@@ -6,6 +5,7 @@ const { Readability } = require('@mozilla/readability');
 const cheerio = require('cheerio');
 const { google } = require('googleapis');
 const Groq = require('groq-sdk');
+const fs = require('fs').promises;
 
 // --- الإعدادات ---
 const BLOG_ID = "2636919176960128451";
@@ -16,127 +16,173 @@ const GROQ_API_KEY = "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";
 
 const groq = new Groq({ apiKey: GROQ_API_KEY });
 const parser = new Parser();
+const DB_FILE = './published_urls.json';
 
 // --- المصادر الذكية ---
 const SOURCES = [
-    { name: "Gaming", url: "https://www.windowscentral.com/gaming/rss.xml", label: "Gaming" },
-    { name: "Android", url: "https://www.androidpolice.com/feed/", label: "Android" },
-    { name: "Make Money", url: "https://www.savethestudent.org/make-money/feed", label: "Make Money" },
-    { name: "Reviews", url: "https://9to5google.com/feed/", label: "Reviews" },
-    { name: "Tech News", url: "https://www.geeky-gadgets.com/feed/", label: "Tech" },
-    { name: "AdTech", url: "https://www.exchangewire.com/feed/", label: "Business" },
-    { name: "Google Help", url: "https://news.google.com/rss/search?q=how+to+fix+android+app+problem&hl=en-US", label: "Troubleshooting" }
+    { name: "Google Help", url: "https://news.google.com/rss/search?q=site:support.google.com+android+OR+windows&hl=en-US", label: "Troubleshooting" },
+    { name: "Android", url: "https://www.androidpolice.com/feed/", label: "Android" },
+    { name: "Make Money", url: "https://www.savethestudent.org/make-money/feed", label: "Make Money" }
 ];
 
-// --- وظائف المعالجة ---
-
-async function getArticleData(url) {
-    try {
-        const res = await axios.get(url, { timeout: 10000 });
-        const dom = new JSDOM(res.data, { url });
-        const reader = new Readability(dom.window.document);
-        const article = reader.parse();
-        if (!article) return null;
-
-        const $ = cheerio.load(article.content);
-        let images = [];
-        $('img').each((i, el) => {
-            let src = $(el).attr('src');
-            if (src && src.startsWith('http')) images.push(src);
-        });
-
-        return { title: article.title, text: article.textContent.trim().slice(0, 4000), images, link: url };
-    } catch (e) { return null; }
+async function loadPublishedUrls() {
+    try {
+        const data = await fs.readFile(DB_FILE, 'utf8');
+        return JSON.parse(data);
+    } catch (e) { return []; }
 }
 
-async function generateSmartContent(sourceInfo, article) {
-    const prompt = `
-    You are an SEO Expert. Rewrite this article: "${article.title}"
-    Follow these STRICT rules:
-    1. Hook Title: Create a viral title (e.g., "Stop Wasting Time! Use this...")
-    2. Structure: Use <h2> for subheadings.
-    3. Content Type: If it's a review, make it a "Comparison". If it's a tutorial, make it "Step-by-Step Troubleshooting".
-    4. Best 10: If possible, format it as a list of top tools/tips.
-    5. FAQ: Add a "Frequently Asked Questions" section at the end.
-    6. Internal Linking: Suggest 2 placeholders like [Insert Link to Related Post Here].
-    7. Affiliate Hint: Add a call-to-action to check out a tool/app.
-    8. Tone: High energy, engaging, and professional.
-    9. Language: English.
-    Content to rewrite: ${article.text}
-    `;
+async function savePublishedUrl(url) {
+    const urls = await loadPublishedUrls();
+    urls.push(url);
+    await fs.writeFile(DB_FILE, JSON.stringify(urls, null, 2));
+}
 
-    try {
-        const completion = await groq.chat.completions.create({
-            messages: [{ role: "system", content: prompt }],
-            model: "llama3-8b-8192",
-            temperature: 0.7
-        });
-        return completion.choices[0].message.content;
-    } catch (e) { return article.text; }
+// --- وظائف المعالجة ---
+async function getArticleData(url) {
+    try {
+        const res = await axios.get(url, { timeout: 15000 });
+        const dom = new JSDOM(res.data, { url });
+        const reader = new Readability(dom.window.document);
+        const article = reader.parse();
+        if (!article) return null;
+
+        const $ = cheerio.load(article.content);
+        let images = [];
+        $('img').each((i, el) => {
+            let src = $(el).attr('src');
+            if (src && src.startsWith('http')) images.push(src);
+        });
+
+        // نأخذ نص كافي لإنتاج مقال طويل
+        return { originalTitle: article.title, text: article.textContent.trim().slice(0, 8000), images, link: url };
+    } catch (e) { return null; }
+}
+
+async function generateSmartContent(article) {
+    const prompt = `
+    You are an elite SEO Expert and Copywriter. Your goal is to write a highly ranking, Google AdSense-friendly article.
+    
+    Task: Rewrite the following content completely and output EXACTLY a JSON object with two keys: "title" and "content".
+    
+    Rules for "title" (H1):
+    - Must be a viral, click-worthy Arabic title.
+    - Include strong keywords and end with words like "2026", "(شرح كامل)", or "(خطوة بخطوة)".
+    
+    Rules for "content" (HTML Format):
+    - Language: Fluent Arabic (Translate the source naturally).
+    - Length: Expand the ideas to be between 800 - 1500 words. Do not write a short article.
+    - Structure: 
+      1. Start with a 3-4 line engaging Introduction.
+      2. Use <h2> for main subheadings and <h3> for smaller points.
+      3. Use VERY short paragraphs (maximum 2-3 lines per paragraph) for mobile readability.
+      4. Use bullet points <ul><li> or numbered lists wherever possible.
+      5. Include an <h2> الأسئلة الشائعة (FAQ) section at the end with 2-3 questions and answers.
+      6. End with a short <h2> الخلاصة (Conclusion).
+    - Links: Insert this exact placeholder <a href="#">[رابط مقال ذو صلة هنا]</a> twice naturally in the text.
+    - DO NOT include markdown formatting like \`\`\`json or \`\`\`html in your response. Just the raw JSON object.
+    
+    Source Content to Rewrite:
+    ${article.text}
+    `;
+
+    try {
+        const completion = await groq.chat.completions.create({
+            messages: [{ role: "user", content: prompt }],
+            model: "llama3-8b-8192",
+            temperature: 0.7,
+            response_format: { type: "json_object" } // إجبار الذكاء الاصطناعي على إخراج JSON
+        });
+        
+        // تحويل النص المسترجع إلى كائن برمجي (Object)
+        return JSON.parse(completion.choices[0].message.content);
+    } catch (e) { 
+        console.log("⚠️ AI Generation Error", e.message);
+        return null; 
+    }
 }
 
 // --- المحرك الرئيسي ---
-
 async function startEmpireBot() {
-    console.log("🚀 Starting the Multi-Niche Empire Bot...");
-    
-    // اختيار مصدر عشوائي لتنويع المحتوى يومياً
-    const source = SOURCES[Math.floor(Math.random() * SOURCES.length)];
-    const feed = await parser.parseURL(source.url);
-    const items = feed.items.slice(0, 5);
+    console.log("🚀 Starting the SEO Master Bot...");
+    const publishedUrls = await loadPublishedUrls();
 
-    for (let item of items) {
-        console.log(`📡 Checking: ${item.title}`);
-        const data = await getArticleData(item.link);
-        
-        if (!data || data.text.length < 500) continue;
+    for (const source of SOURCES) {
+        console.log(`\n📡 Checking Source: ${source.name} ...`);
+        
+        try {
+            const feed = await parser.parseURL(source.url);
+            const items = feed.items.slice(0, 5);
 
-        const aiContent = await generateSmartContent(source, data);
-        
-        // تصميم احترافي مع علامة مائية نصية على الصور
-        const coverImg = data.images[0] || "https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=800";
-        
-        const htmlBody = `
-        <div dir="ltr" style="font-family: Arial, sans-serif; color: #222; line-height: 1.7; max-width: 750px; margin: auto;">
-            <div style="text-align: center; position: relative;">
-                <img src="${coverImg}" style="width: 100%; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);"/>
-                <div style="position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.6); color: white; padding: 5px 15px; border-radius: 50px; font-size: 12px;">
-                    Verified Tech Review
-                </div>
-            </div>
-            
-            <div style="padding: 20px;">
-                ${aiContent.replace(/\n/g, '<br/>')}
-            </div>
-            
-            <div style="background: #f8f9fa; border-left: 6px solid #007bff; padding: 20px; margin-top: 30px; border-radius: 10px;">
-                <strong>💡 Quick Tip:</strong> Always keep your apps updated to avoid security risks!
-            </div>
+            for (let item of items) {
+                if (publishedUrls.includes(item.link)) continue; 
 
-            <div style="text-align: center; margin-top: 40px; padding: 20px; background: #eef2f7; border-radius: 15px;">
-                <p>Enjoyed this? Check our latest <b>App Recommendations</b> on the homepage!</p>
-                <a href="${data.link}" style="color: #007bff; text-decoration: none; font-weight: bold;">Original Source ↗</a>
-            </div>
-        </div>
-        `;
+                console.log(`⏳ Scraping: ${item.title}`);
+                const data = await getArticleData(item.link);
+                
+                if (!data || data.text.length < 1000) {
+                    console.log("⏭️ Article too short, skipping to avoid low value content.");
+                    continue;
+                }
 
-        // النشر عبر جوجل
-        const auth = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET);
-        auth.setCredentials({ refresh_token: REFRESH_TOKEN });
-        const blogger = google.blogger({ version: 'v3', auth });
+                console.log("🧠 Generating SEO Article via AI...");
+                const aiData = await generateSmartContent(data);
+                
+                if (!aiData || !aiData.title || !aiData.content) continue;
 
-        await blogger.posts.insert({
-            blogId: BLOG_ID,
-            requestBody: {
-                title: data.title,
-                content: htmlBody,
-                labels: [source.label, 'Latest Apps', 'AI Tips']
-            }
-        });
+                // اختيار صورة وتجهيزها بـ alt tag متوافق مع SEO
+                const coverImg = data.images[0] || "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=800";
+                
+                // القالب: متوافق 100% مع الموبايل، خطوط مقروءة، ومسافات ممتازة
+                const htmlBody = `
+                <div dir="rtl" style="font-family: 'Tajawal', 'Segoe UI', Tahoma, sans-serif; color: #333; line-height: 1.9; font-size: 17px; max-width: 800px; margin: auto; padding: 15px;">
+                    
+                    <div style="margin-bottom: 25px; text-align: center;">
+                        <img src="${coverImg}" alt="${aiData.title}" style="width: 100%; height: auto; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);"/>
+                    </div>
+                    
+                    <div class="article-content" style="text-align: right;">
+                        ${aiData.content}
+                    </div>
+                    
+                    <div style="background-color: #f8f9fa; border-right: 5px solid #0056b3; padding: 20px; margin-top: 40px; border-radius: 8px;">
+                        <h3 style="margin-top: 0; color: #0056b3;">💡 شاركنا رأيك!</h3>
+                        <p style="margin-bottom: 0;">هل جربت هذه الطرق من قبل؟ اترك لنا تعليقاً بالأسفل لنعرف رأيك، ولا تنسَ تصفح باقي مقالاتنا التقنية.</p>
+                    </div>
 
-        console.log(`✅ Published: ${data.title}`);
-        break; // نشر مقال واحد احترافي في كل دورة
-    }
+                    <div style="text-align: center; margin-top: 30px; font-size: 14px;">
+                        <a href="${data.link}" target="_blank" rel="nofollow" style="color: #6c757d; text-decoration: none;">المصدر الأصلي ↗</a>
+                    </div>
+                </div>
+                `;
+
+                // النشر عبر جوجل
+                const auth = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET);
+                auth.setCredentials({ refresh_token: REFRESH_TOKEN });
+                const blogger = google.blogger({ version: 'v3', auth });
+
+                await blogger.posts.insert({
+                    blogId: BLOG_ID,
+                    requestBody: {
+                        title: aiData.title, // العنوان الفيروسي الذي ولده الذكاء الاصطناعي!
+                        content: htmlBody,
+                        labels: [source.label, 'حصري', 'شروحات 2026']
+                    }
+                });
+
+                console.log(`✅ SUCCESS! Published: ${aiData.title}`);
+                await savePublishedUrl(item.link);
+                break; // مقال واحد من كل مصدر
+            }
+            
+            // فاصل زمني 5 ثواني فقط للتجربة (يمكنك زيادته لاحقاً)
+            await new Promise(res => setTimeout(res, 5000)); 
+
+        } catch (err) {
+            console.log(`❌ Error in ${source.name}:`, err.message);
+        }
+    }
+    console.log("🎉 All done!");
 }
 
 startEmpireBot();
