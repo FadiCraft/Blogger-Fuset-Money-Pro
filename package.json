@@ -1,10 +1,14 @@
 {
-  "name": "blogger-ai-publisher",
-  "version": "1.0.0",
+  "name": "google-news-ai-bot",
+  "version": "3.0.0",
+  "main": "index.js",
   "dependencies": {
-    "groq-sdk": "^0.3.0",
-    "googleapis": "^134.0.0",
-    "axios": "^1.6.2",
-    "sharp": "^0.33.0"
+    "axios": "^1.6.0",
+    "rss-parser": "^3.13.0",
+    "googleapis": "^126.0.0",
+    "groq-sdk": "^0.3.3",
+    "jsdom": "^24.0.0",
+    "@mozilla/readability": "^0.5.0",
+    "cheerio": "^1.0.0-rc.12"
   }
 }
