@@ -158,7 +158,6 @@ async function startEmpireBot() {
                 </div>
 
                 <a href="${data.link}" class="source-link" target="_blank" rel="nofollow">Read Full Research on Original Source ↗</a>
-                <p style="text-align:center; font-size: 12px; color: #999; margin-top: 20px;">&copy; 2026 AI News Bot - Optimized for Reader Experience</p>
             </div>
             `;
 
