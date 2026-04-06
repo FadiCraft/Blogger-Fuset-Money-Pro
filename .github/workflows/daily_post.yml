@@ -1,25 +1,25 @@
-name: AI Publisher
+name: Google News Blogger Bot
 
 on:
   schedule:
-    - cron: '0 */4 * * *'   # يعمل كل 4 ساعات تلقائياً
-  workflow_dispatch:        # يتيح لك تشغيله يدوياً بنقرة زر
+    - cron: '0 */4 * * *' # ينشر خبر كل 4 ساعات لتواكب التريند
+  workflow_dispatch:
 
 jobs:
-  build:
+  run-bot:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v3
         with:
           node-version: '20'
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
-          npm install groq-sdk googleapis rss-parser
+          npm install --force
 
-      - name: Run publisher
+      - name: Execution
         run: node index.js
