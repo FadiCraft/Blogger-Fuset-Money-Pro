@@ -191,7 +191,7 @@ async function startEmpireBot() {
 
             // فاصل زمني بين كل موقع وموقع (15 دقيقة) لتجنب الحظر
             console.log("⏱️ Waiting 15 minutes before checking the next source...");
-            await delay(15 * 60 * 1000); 
+            await delay(1 * 60 * 1000); 
 
         } catch (err) {
             console.log(`❌ Error processing source ${source.name}:`, err.message);
