@@ -216,7 +216,6 @@ async function startEmpireBot() {
                         ${cleanAiBody}
                     </div>
 
-                    <a href="${data.link}" class="source-link" target="_blank" rel="nofollow">Read Full Research on Original Source ↗</a>
                 </div>
                 `;
 
