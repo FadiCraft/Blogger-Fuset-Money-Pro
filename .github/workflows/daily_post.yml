@@ -20,6 +20,7 @@ jobs:
       - name: Install Dependencies
         run: |
           npm install --force
+          npm install puppeteer puppeteer-extra puppeteer-extra-plugin-stealth
 
       - name: Execution
         run: node index.js
