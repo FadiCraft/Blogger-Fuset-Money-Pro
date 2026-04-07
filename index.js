@@ -240,7 +240,7 @@ async function startEmpireBot() {
 
             if (postedSuccessfully && i < SOURCES.length - 1) {
                 const waitTime = getRandomDelay();
-                const waitMinutes = (waitTime / 60000).toFixed(2);
+                const waitMinutes = (waitTime / 130000).toFixed(2);
                 console.log(`⏳ تم النشر في قسم ${source.name}. جاري الانتظار لمدة ${waitMinutes} دقيقة قبل القسم التالي...`);
                 await delay(waitTime);
             } else if (!postedSuccessfully) {
