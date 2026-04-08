@@ -5,8 +5,6 @@ const cheerio = require('cheerio');
 const { google } = require('googleapis');
 const Groq = require('groq-sdk');
 const axios = require('axios');
-const sharp = require('sharp');
-const { createCanvas, loadImage } = require('canvas');
 
 const BLOG_ID = process.env.BLOG_ID || "2636919176960128451";
 const CLIENT_ID = process.env.CLIENT_ID || "872415365656-7qribadnc7k2u21kl6jjcbatdueevifh.apps.googleusercontent.com"; 
@@ -27,61 +25,21 @@ const SOURCES = [
     { name: "AI News", url: "https://www.theverge.com/rss/index.xml", label: "AI", enabled: true }
 ];
 
-// قائمة بصور آمنة
+// قائمة بصور آمنة (Unsplash - مجانية للاستخدام التجاري)
 const SAFE_IMAGES = [
     "https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&q=80",
     "https://images.unsplash.com/photo-1432888498266-38ffec3eaf0a?w=800&q=80",
     "https://images.unsplash.com/photo-1581291518633-83b4ebd1d83e?w=800&q=80",
-    "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&q=80"
+    "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&q=80",
+    "https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=800&q=80",
+    "https://images.unsplash.com/photo-1486312338219-ce68d2c6f44d?w=800&q=80",
+    "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800&q=80"
 ];
 
-// دالة لإضافة علامة مائية حقيقية على الصورة (تحويلها إلى Base64 SVG مع علامة مائية)
-async function addWatermarkToImage(imageUrl, title) {
-    try {
-        // اختصار عنوان المقال لاستخدامه كعلامة مائية
-        const watermarkText = `© Tech Insights ${new Date().getFullYear()}`;
-        
-        // إنشاء SVG مع علامة مائية شفافة
-        const svgWatermark = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="400" height="200">
-            <defs>
-                <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-                    <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.5"/>
-                </filter>
-            </defs>
-            <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" 
-                  font-family="Arial, sans-serif" font-size="24" font-weight="bold"
-                  fill="rgba(255,255,255,0.7)" filter="url(#shadow)"
-                  transform="rotate(-25, 200, 100)">
-                ${watermarkText}
-            </text>
-            <text x="50%" y="70%" text-anchor="middle" dominant-baseline="middle"
-                  font-family="Arial, sans-serif" font-size="14" font-weight="normal"
-                  fill="rgba(255,255,255,0.5)" transform="rotate(-25, 200, 140)">
-                TechInsights.com
-            </text>
-        </svg>`;
-        
-        // تحويل SVG إلى Base64
-        const encodedWatermark = Buffer.from(svgWatermark).toString('base64');
-        const watermarkDataUrl = `data:image/svg+xml;base64,${encodedWatermark}`;
-        
-        // نعيد الصورة مع إضافة العلامة المائية كعنصر منفصل
-        // (بدلاً من تعديل الصورة الفعلية، نضيف العلامة المائية في HTML)
-        return {
-            originalUrl: imageUrl,
-            watermarkUrl: watermarkDataUrl,
-            hasWatermark: true
-        };
-    } catch (e) {
-        return { originalUrl: imageUrl, watermarkUrl: null, hasWatermark: false };
-    }
-}
-
-// دالة لاستخراج الصور الآمنة فقط
+// دالة لاستخراج الصور الآمنة فقط (بدون إعلانات)
 function extractSafeImages($, dom) {
     let images = [];
-    const unsafeKeywords = ['ad', 'ads', 'advertisement', 'sponsor', 'logo', 'icon', 'avatar', 'banner', 'promo', 'googlead', 'doubleclick', 'amazon-ads', 'advert', 'watermark', 'pixel', 'tracking', 'facebook', 'twitter', 'instagram', 'youtube'];
+    const unsafeKeywords = ['ad', 'ads', 'advertisement', 'sponsor', 'logo', 'icon', 'avatar', 'banner', 'promo', 'googlead', 'doubleclick', 'amazon-ads', 'advert', 'pixel', 'tracking', 'facebook', 'twitter', 'instagram', 'youtube', 'analytics', 'pixel', 'cookies'];
     
     $('img').each((i, el) => {
         if (images.length >= 3) return false;
@@ -214,23 +172,9 @@ OUTPUT (JSON only):
     }
 }
 
-async function publishToBlogger(aiData, mainImage, sourceLabel, readTime, currentDate, watermarkData) {
+async function publishToBlogger(aiData, mainImage, sourceLabel, readTime, currentDate) {
     try {
-        // إنشاء HTML للعلامة المائية على الصورة الرئيسية
-        const featuredImageHtml = watermarkData && watermarkData.watermarkUrl ? `
-        <div class="featured-image">
-            <div class="watermark-container" style="position: relative;">
-                <img src="${escapeHtml(mainImage)}" alt="${escapeHtml(aiData.seoTitle)}" style="width:100%; border-radius:20px;">
-                <div class="watermark-overlay" style="position: absolute; bottom: 15px; right: 15px; background: rgba(0,0,0,0.6); color: white; padding: 5px 12px; border-radius: 8px; font-size: 12px; font-family: Arial; backdrop-filter: blur(4px);">
-                    <i class="fas fa-copyright"></i> Tech Insights ${new Date().getFullYear()}
-                </div>
-                <div class="watermark-diagonal" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-25deg); opacity: 0.25; pointer-events: none;">
-                    <img src="${watermarkData.watermarkUrl}" style="width: 300px;">
-                </div>
-            </div>
-        </div>
-        ` : `<div class="featured-image"><img src="${escapeHtml(mainImage)}" alt="${escapeHtml(aiData.seoTitle)}"></div>`;
-
+        // إنشاء HTML مع علامة مائية باستخدام CSS فقط
         const htmlBody = `
 <div class="main-wrapper" dir="ltr">
     <style>
@@ -247,6 +191,13 @@ async function publishToBlogger(aiData, mainImage, sourceLabel, readTime, curren
         h1 { font-size: 2.3rem; font-weight: 800; line-height: 1.3; margin-bottom: 18px; color: #0a0f2c; }
         .article-meta { display: flex; gap: 22px; font-size: 0.9rem; color: #5a6e85; margin: 15px 0 25px; padding-bottom: 20px; border-bottom: 2px solid #eef2f8; }
         .article-meta i { margin-right: 6px; color: #3b82f6; }
+        
+        /* Featured Image with Watermark */
+        .featured-image { position: relative; margin: 25px 0 35px; border-radius: 24px; overflow: hidden; }
+        .featured-image img { width: 100%; display: block; border-radius: 24px; }
+        .watermark { position: absolute; bottom: 15px; right: 15px; background: rgba(0,0,0,0.6); color: white; padding: 6px 14px; border-radius: 10px; font-size: 12px; font-family: monospace; backdrop-filter: blur(5px); z-index: 2; }
+        .watermark i { margin-right: 5px; }
+        .watermark-diagonal { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-25deg); opacity: 0.2; font-size: 14px; color: white; background: rgba(0,0,0,0.3); padding: 8px 20px; border-radius: 40px; white-space: nowrap; font-family: monospace; letter-spacing: 2px; pointer-events: none; }
         
         /* Content */
         .article-content h2 { font-size: 1.8rem; font-weight: 700; margin: 45px 0 18px 0; padding-left: 14px; border-left: 5px solid #3b82f6; color: #0a0f2c; }
@@ -272,12 +223,11 @@ async function publishToBlogger(aiData, mainImage, sourceLabel, readTime, curren
         .faq-item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
         .faq-item strong { color: #1e293b; font-size: 1rem; display: block; margin-bottom: 8px; }
         
-        /* Images with Watermark */
-        .featured-image { margin: 25px 0 35px; border-radius: 24px; overflow: hidden; }
-        .content-img { margin: 35px 0; text-align: center; position: relative; }
+        /* Content Images with Watermark */
+        .content-img { position: relative; margin: 35px 0; text-align: center; }
         .content-img img { max-width: 100%; border-radius: 20px; box-shadow: 0 10px 25px -10px rgba(0,0,0,0.15); }
+        .content-img .watermark { bottom: 10px; right: 10px; font-size: 10px; padding: 4px 10px; }
         .caption { font-size: 0.8rem; color: #6b7a8a; margin-top: 10px; }
-        .watermark-overlay { position: absolute; bottom: 15px; right: 15px; background: rgba(0,0,0,0.55); color: white; padding: 4px 12px; border-radius: 8px; font-size: 11px; font-family: monospace; backdrop-filter: blur(4px); z-index: 2; }
         
         /* Author */
         .author-box { background: #f1f5f9; border-radius: 24px; padding: 25px; margin: 50px 0 20px; display: flex; gap: 22px; align-items: center; }
@@ -289,6 +239,7 @@ async function publishToBlogger(aiData, mainImage, sourceLabel, readTime, curren
             .article-padding { padding: 20px 22px 35px; }
             h1 { font-size: 1.8rem; }
             .article-content h2 { font-size: 1.5rem; }
+            .watermark-diagonal { font-size: 8px; white-space: nowrap; }
         }
     </style>
 
@@ -301,7 +252,11 @@ async function publishToBlogger(aiData, mainImage, sourceLabel, readTime, curren
             <span><i class="far fa-clock"></i> ${readTime} min read</span>
         </div>
 
-        ${featuredImageHtml}
+        <div class="featured-image">
+            <img src="${escapeHtml(mainImage)}" alt="${escapeHtml(aiData.seoTitle)}">
+            <div class="watermark"><i class="fas fa-copyright"></i> Tech Insights ${new Date().getFullYear()}</div>
+            <div class="watermark-diagonal">🔒 TECH INSIGHTS PRO 🔒</div>
+        </div>
 
         <div class="article-content">
             ${aiData.htmlContent}
@@ -350,10 +305,10 @@ function escapeHtml(str) {
     });
 }
 
-// الدالة الرئيسية مع إيقاف تام بعد الانتهاء
+// الدالة الرئيسية
 async function startEmpireBot() {
     console.log(`\n${'='.repeat(60)}`);
-    console.log(`🚀 EMPIRE BOT STARTED at ${new Date().toLocaleString()}`);
+    console.log(`🚀 BOT STARTED at ${new Date().toLocaleString()}`);
     console.log(`${'='.repeat(60)}\n`);
     
     let totalPublished = 0;
@@ -398,13 +353,11 @@ async function startEmpireBot() {
                     ? data.images[0] 
                     : SAFE_IMAGES[Math.floor(Math.random() * SAFE_IMAGES.length)];
                 
-                const watermarkData = await addWatermarkToImage(coverImg, aiData.seoTitle);
-                
                 const wordCount = aiData.htmlContent.replace(/<[^>]*>/g, '').split(/\s+/).length;
                 const readTime = Math.max(6, Math.ceil(wordCount / 210));
                 const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
-                const success = await publishToBlogger(aiData, coverImg, source.label, readTime, currentDate, watermarkData);
+                const success = await publishToBlogger(aiData, coverImg, source.label, readTime, currentDate);
                 
                 if (success) {
                     totalPublished++;
@@ -433,9 +386,7 @@ async function startEmpireBot() {
     console.log(`📊 SUMMARY: ${totalPublished} articles published from ${totalAttempts} attempts`);
     console.log(`${'='.repeat(60)}`);
     
-    // إيقاف تام للعملية
     process.exit(0);
 }
 
-// تشغيل البوت
 startEmpireBot();
