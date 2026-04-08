@@ -2,7 +2,7 @@ name: Google News Blogger Bot
 
 on:
   schedule:
-    - cron: '0 */5 * * *' # يعمل كل 5 ساعات (إذا أردته كل ساعة استخدم '0 * * * *')
+    - cron: '0 */1 * * *' # ينشر خبر كل 1 ساعات لتواكب التريند
   workflow_dispatch:
 
 jobs:
@@ -10,10 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v3
         with:
           node-version: '20'
 
@@ -21,7 +21,6 @@ jobs:
         run: |
           npm install --force
           npm install puppeteer puppeteer-extra puppeteer-extra-plugin-stealth
-          npm install cloudinary sharp axios
 
       - name: Execution
         run: node index.js
