@@ -7,7 +7,7 @@ const Groq = require('groq-sdk');
 const sharp = require('sharp');
 const axios = require('axios');
 
-// --- مكتبات التخطي ---
+// --- مكتبات التخطي لـ Puppeteer ---
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
@@ -23,21 +23,21 @@ const groq = new Groq({ apiKey: GROQ_API_KEY });
 const parser = new Parser();
 
 const SOURCES = [
-    { name: "Gaming", url: "[https://www.windowscentral.com/rss](https://www.windowscentral.com/rss)", label: "Gaming" },
-    { name: "Android", url: "[https://www.androidpolice.com/feed/](https://www.androidpolice.com/feed/)", label: "Android" },
-    { name: "Make Money", url: "[https://www.savethestudent.org/make-money/feed](https://www.savethestudent.org/make-money/feed)", label: "Make Money" },
-    { name: "Reviews", url: "[https://9to5google.com/feed/](https://9to5google.com/feed/)", label: "Reviews" },
-    { name: "Tech News", url: "[https://www.geeky-gadgets.com/feed/](https://www.geeky-gadgets.com/feed/)", label: "Tech" },
-    { name: "AdTech", url: "[https://www.exchangewire.com/feed/](https://www.exchangewire.com/feed/)", label: "Business" },
+    { name: "Gaming", url: "https://www.windowscentral.com/rss", label: "Gaming" },
+    { name: "Android", url: "https://www.androidpolice.com/feed/", label: "Android" },
+    { name: "Make Money", url: "https://www.savethestudent.org/make-money/feed", label: "Make Money" },
+    { name: "Reviews", url: "https://9to5google.com/feed/", label: "Reviews" },
+    { name: "Tech News", url: "https://www.geeky-gadgets.com/feed/", label: "Tech" },
+    { name: "AdTech", url: "https://www.exchangewire.com/feed/", label: "Business" },
 ];
 
 function getRandomDelay() {
-    return Math.floor(Math.random() * (60000 - 30000 + 1)) + 30000;
+    return Math.floor(Math.random() * (60000 - 30000 + 1)) + 30000; // بين 30 و 60 ثانية
 }
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// --- 1. وظيفة جلب الروابط المنشورة ---
+// --- 1. وظيفة جلب الروابط المنشورة من بلوجر لفحص التكرار ---
 async function fetchPublishedLinksFromBlogger(blogger) {
     console.log("🔄 جاري فحص مدونة DeepLexa لجلب المقالات السابقة...");
     let publishedLinks = [];
@@ -62,7 +62,7 @@ async function fetchPublishedLinksFromBlogger(blogger) {
     return publishedLinks;
 }
 
-// --- 2. معالجة الصور ---
+// --- 2. معالجة الصور وإضافة العلامة المائية (DeepLexa) ---
 async function processImageWithWatermark(imageUrl) {
     try {
         const response = await axios({ url: imageUrl, responseType: 'arraybuffer', timeout: 15000 });
@@ -99,7 +99,7 @@ async function processImageWithWatermark(imageUrl) {
     }
 }
 
-// --- 3. جلب محتوى المقال (Scraping) ---
+// --- 3. جلب محتوى المقال الأصلي (Puppeteer) ---
 async function getArticleData(url) {
     let browser;
     try {
@@ -110,7 +110,7 @@ async function getArticleData(url) {
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
         
-        // منع تحميل الصور والخطوط لتسريع الـ Scraping وتجنب الحظر
+        // تسريع التصفح ومنع تحميل الموارد غير الضرورية
         await page.setRequestInterception(true);
         page.on('request', (req) => {
             if(['image', 'stylesheet', 'font', 'media'].includes(req.resourceType())) {
@@ -144,7 +144,7 @@ async function getArticleData(url) {
 
         return { 
             title: article.title, 
-            text: article.textContent.trim().slice(0, 6000), // تقليل الحجم قليلاً لتجنب تجاوز حد الـ Tokens في Groq
+            text: article.textContent.trim().slice(0, 6000), 
             images: images.filter(img => !img.includes('avatar') && !img.includes('logo')), 
             link: url
         };
@@ -154,25 +154,24 @@ async function getArticleData(url) {
     }
 }
 
-// --- 4. توليد المحتوى بالذكاء الاصطناعي (تم استخدام JSON Format) ---
+// --- 4. توليد المحتوى بالذكاء الاصطناعي (بتنسيق JSON) ---
 async function generateSmartContent(article) {
     const prompt = `
     You are an Expert SEO Content Writer and Tech Blogger for 'DeepLexa'. 
     Your goal is to write a highly valuable, long-form SEO article (800 - 1200 words) based on the provided source text.
-    DO NOT just summarize. Expand on the ideas, add context, explain technical terms, and provide a unique perspective to ensure it is accepted by Google AdSense.
+    DO NOT just summarize. Expand on the ideas, add context, explain technical terms, and provide a unique perspective.
 
     CRITICAL RULES:
-    1. The article must be engaging, professional, and informative.
-    2. Use HTML elements properly: <h2> for main sections, <h3> for sub-sections, <ul> and <li> for lists.
-    3. Include an Introduction and a Conclusion.
-    4. MUST include a FAQ Section at the end using ONLY <details><summary> tags.
-    5. Output MUST be a valid JSON object. No markdown tags outside the JSON.
+    1. Use HTML elements properly: <h2> for main sections, <h3> for sub-sections, <ul> and <li> for lists.
+    2. Include an Introduction and a Conclusion.
+    3. MUST include a FAQ Section at the end using ONLY <details><summary> tags. Example: <details><summary>Question?</summary><p>Answer</p></details>.
+    4. Output MUST be a valid JSON object. No markdown formatting outside the JSON.
 
     JSON FORMAT REQUIRED:
     {
       "title": "A Viral, Click-Worthy SEO Title (Max 60 chars)",
       "body": "The complete HTML formatted article content here",
-      "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]
+      "tags": ["tag1", "tag2", "tag3", "tag4"]
     }
 
     Source Title: ${article.title}
@@ -182,25 +181,22 @@ async function generateSmartContent(article) {
     try {
         const completion = await Promise.race([
             groq.chat.completions.create({
-                messages: [{ role: "user", content: prompt }], // User role is better for enforcing strict JSON
+                messages: [{ role: "user", content: prompt }],
                 model: "llama-3.3-70b-versatile",
-                temperature: 0.7, // رفع درجة الإبداع قليلاً لزيادة طول المحتوى
-                response_format: { type: "json_object" } // ميزة تضمن لك استلام JSON خالي من الأخطاء
+                temperature: 0.7, 
+                response_format: { type: "json_object" } 
             }),
             new Promise((_, reject) => setTimeout(() => reject(new Error("Groq API Timeout")), 60000))
         ]);
 
-        // تحويل النص المستلم إلى كائن (Object)
-        const jsonResponse = JSON.parse(completion.choices[0].message.content);
-        return jsonResponse;
-
+        return JSON.parse(completion.choices[0].message.content);
     } catch (e) { 
         console.error("\n❌ خطأ في الذكاء الاصطناعي (Groq):", e.message); 
         return null; 
     }
 }
 
-// --- الدالة الرئيسية ---
+// --- الدالة الرئيسية (The Master Bot) ---
 async function startEmpireBot() {
     console.log("🚀 Starting DeepLexa SEO Bot...");
     let postedCount = 0;
@@ -214,19 +210,33 @@ async function startEmpireBot() {
     for (let source of SOURCES) {
         try {
             console.log(`\n🔍 جاري فحص مصدر: ${source.name}`);
-            const feed = await parser.parseURL(source.url);
+            
+            // --- تجاوز حظر جلب الـ RSS باستخدام Axios ---
+            const response = await axios.get(source.url, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'application/rss+xml, application/xml;q=0.9, */*;q=0.8'
+                },
+                timeout: 20000 
+            });
+
+            const feed = await parser.parseString(response.data);
             const items = feed.items.slice(0, 10); 
+
+            if (!items || items.length === 0) {
+                console.log(`⚠️ المصدر ${source.name} فارغ حالياً.`);
+                continue;
+            }
 
             for (let item of items) {
                 if (publishedLinks.includes(item.link)) {
-                    console.log(`⏭️ تخطي (موجود في DeepLexa): ${item.title}`);
+                    console.log(`⏭️ تخطي (موجود مسبقاً): ${item.title}`);
                     continue; 
                 }
 
                 console.log(`✍️ جاري معالجة مقال جديد: ${item.title}`);
                 const data = await getArticleData(item.link);
                 
-                // تم رفع الحد الأدنى للنص للتأكد من جودة المصدر
                 if (!data || data.text.length < 500) {
                     console.log(`⚠️ تخطي: المحتوى الأصلي قصير جداً ولا يصلح كمصدر.`);
                     continue;
@@ -234,7 +244,6 @@ async function startEmpireBot() {
 
                 const aiResponse = await generateSmartContent(data);
                 
-                // فحص إذا كان الـ AI أعاد البيانات بشكل صحيح
                 if (!aiResponse || !aiResponse.body) {
                     console.log(`⚠️ تخطي: مشكلة في استجابة الذكاء الاصطناعي أو فشل التنسيق.`);
                     continue;
@@ -250,7 +259,7 @@ async function startEmpireBot() {
                 }
 
                 console.log(`🎨 جاري تصميم وحفظ حقوق الصورة لـ DeepLexa...`);
-                const originalImg = data.images && data.images[0] ? data.images[0] : "[https://images.unsplash.com/photo-1518770660439-4636190af475](https://images.unsplash.com/photo-1518770660439-4636190af475)";
+                const originalImg = data.images && data.images[0] ? data.images[0] : "https://images.unsplash.com/photo-1518770660439-4636190af475";
                 const finalImage = await processImageWithWatermark(originalImg);
 
                 const finalHtml = `
@@ -286,7 +295,7 @@ async function startEmpireBot() {
                     requestBody: {
                         title: viralTitle,
                         content: finalHtml,
-                        labels: [...new Set([source.label, ...dynamicTags])].slice(0, 6) // تقليل التاجات إلى 6 لتجنب حشو الكلمات المفتاحية
+                        labels: [...new Set([source.label, ...dynamicTags])].slice(0, 6) 
                     }
                 });
 
@@ -301,13 +310,16 @@ async function startEmpireBot() {
                 
                 break; 
             }
-        } catch (err) { console.error(`❌ فشل معالجة القسم ${source.name}:`, err.message); }
+        } catch (err) { 
+            // طباعة رسالة الخطأ بشكل تفصيلي في حال الرفض
+            console.error(`❌ فشل معالجة القسم ${source.name}:`, err.response ? `${err.response.status} ${err.response.statusText}` : err.message); 
+        }
     }
 
     if (postedCount === 0) {
-        console.log("🛑 انتهت العملية: لم يتم العثور على مقالات جديدة في جميع المصادر.");
+        console.log("\n🛑 انتهت العملية: لم يتم العثور على مقالات جديدة في جميع المصادر.");
     } else {
-        console.log(`🎉 تم بنجاح! نُشر ${postedCount} مقالات حصرية على DeepLexa.`);
+        console.log(`\n🎉 تم بنجاح! نُشر ${postedCount} مقالات حصرية على DeepLexa.`);
     }
     
     process.exit(0);
