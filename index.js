@@ -4,6 +4,7 @@ const { Readability } = require('@mozilla/readability');
 const cheerio = require('cheerio');
 const { google } = require('googleapis');
 const Groq = require('groq-sdk');
+const fs = require('fs'); // ضفنا مكتبة الملفات عشان نحفظ الروابط
 
 // --- مكتبات التخطي ---
 const puppeteer = require('puppeteer-extra');
@@ -19,6 +20,24 @@ const GROQ_API_KEY = "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";
 
 const groq = new Groq({ apiKey: GROQ_API_KEY });
 const parser = new Parser();
+
+// --- نظام منع التكرار ---
+const HISTORY_FILE = './published_links.json';
+let publishedLinks = [];
+
+// تحميل الروابط القديمة إذا الملف موجود
+if (fs.existsSync(HISTORY_FILE)) {
+    try {
+        publishedLinks = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8'));
+    } catch (e) {
+        console.error("❌ مشكلة في قراءة ملف الروابط المنشورة، رح نبدأ بملف جديد.");
+    }
+}
+
+function saveToHistory(url) {
+    publishedLinks.push(url);
+    fs.writeFileSync(HISTORY_FILE, JSON.stringify(publishedLinks, null, 2));
+}
 
 const SOURCES = [
     { name: "Gaming", url: "https://www.windowscentral.com/rss", label: "Gaming" },
@@ -72,10 +91,11 @@ async function getArticleData(url) {
             text: article.textContent.trim().slice(0, 8000), 
             images: images.filter(img => !img.includes('avatar')), 
             link: url,
-            excerpt: article.textContent.trim().slice(0, 160) // لوصف الـ SEO
+            excerpt: article.textContent.trim().slice(0, 160)
         };
     } catch (e) {
         if (browser) await browser.close();
+        console.error(`⚠️ تخطي الرابط بسبب مشكلة في التحميل: ${url}`);
         return null; 
     }
 }
@@ -103,26 +123,46 @@ async function generateSmartContent(article) {
     `;
 
     try {
-        const completion = await groq.chat.completions.create({
-            messages: [{ role: "system", content: prompt }],
-            model: "llama-3.3-70b-versatile",
-            temperature: 0.5 
-        });
+        // إضافة تايم أوت للريكويست عشان ما يعلق لو سيرفر Groq طول
+        const completion = await Promise.race([
+            groq.chat.completions.create({
+                messages: [{ role: "system", content: prompt }],
+                model: "llama-3.3-70b-versatile",
+                temperature: 0.5 
+            }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("Groq API Timeout")), 60000)) // يفصل بعد 60 ثانية
+        ]);
+        
         return completion.choices[0].message.content;
-    } catch (e) { return null; }
+    } catch (e) { 
+        console.error("❌ مشكلة في توليد المحتوى من AI:", e.message);
+        return null; 
+    }
 }
 
 async function startEmpireBot() {
     console.log("🚀 Starting the Advanced SEO Bot 2026...");
+    let postedCount = 0; // عشان نتبع كم مقال انتشر
     
     for (let source of SOURCES) {
         try {
+            console.log(`🔍 جاري فحص: ${source.name}`);
             const feed = await parser.parseURL(source.url);
             const items = feed.items.slice(0, 5);
 
             for (let item of items) {
+                // فحص التكرار قبل أي عملية مكلفة
+                if (publishedLinks.includes(item.link)) {
+                    console.log(`⏭️ تخطي (موجود مسبقاً): ${item.title}`);
+                    continue;
+                }
+
+                console.log(`✍️ جاري معالجة مقال جديد: ${item.title}`);
                 const data = await getArticleData(item.link);
-                if (!data || data.text.length < 600) continue;
+                if (!data || data.text.length < 600) {
+                    console.log(`⚠️ تخطي: المحتوى غير كافي أو فيه مشكلة بالصفحة.`);
+                    continue;
+                }
 
                 const aiResponse = await generateSmartContent(data);
                 if (!aiResponse) continue;
@@ -184,16 +224,33 @@ async function startEmpireBot() {
                     requestBody: {
                         title: viralTitle,
                         content: finalHtml,
-                        labels: [...new Set([source.label, ...dynamicTags])].slice(0, 10) // دمج التاجات الثابتة والديناميكية
+                        labels: [...new Set([source.label, ...dynamicTags])].slice(0, 10)
                     }
                 });
 
-                console.log(`✅ تم النشر بنجاح مع تاجات ديناميكية: ${viralTitle}`);
-                await delay(getRandomDelay());
-                break; 
+                console.log(`✅ تم النشر بنجاح: ${viralTitle}`);
+                
+                // حفظ الرابط بعد النشر بنجاح عشان ما يرجع ينشره المرات الجاية
+                saveToHistory(item.link);
+                postedCount++;
+
+                const waitTime = getRandomDelay();
+                console.log(`⏳ انتظار ${(waitTime / 1000).toFixed(0)} ثانية قبل الانتقال...`);
+                await delay(waitTime);
+                
+                break; // ننتقل للمصدر اللي بعده بعد نشر مقال واحد بنجاح (تجنباً للسبام)
             }
         } catch (err) { console.error(`❌ فشل القسم ${source.name}:`, err.message); }
     }
+
+    // فحص نهائي عشان ما يضل السكربت ساكت لو ما لقى اشي
+    if (postedCount === 0) {
+        console.log("🛑 السكربت انتهى: ما في مقالات جديدة جاهزة للنشر حالياً.");
+    } else {
+        console.log(`🎉 انتهت الدورة. تم نشر ${postedCount} مقالات.`);
+    }
+    
+    process.exit(0); // خروج آمن للسكربت
 }
 
 startEmpireBot();
