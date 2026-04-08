@@ -5,7 +5,7 @@ const cheerio = require('cheerio');
 const { google } = require('googleapis');
 const Groq = require('groq-sdk');
 
-// --- مكتبات التخطي ---
+// --- مكتبات التخطي والتشغيل الصامت ---
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
@@ -31,21 +31,18 @@ const SOURCES = [
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// --- 1. دالة فحص التكرار (تتأكد أن العنوان لم ينشر من قبل) ---
-async function isAlreadyPublished(blogger, blogId, title) {
+// --- 1. فحص التكرار في بلوجر ---
+async function isDuplicate(blogger, blogId, title) {
     try {
-        // نبحث في المدونة عن مقال يحمل هذا العنوان بالضبط
         const response = await blogger.posts.search({
             blogId: blogId,
             q: `title:"${title}"`
         });
         return response.data.items && response.data.items.length > 0;
-    } catch (e) {
-        return false; // في حال تعذر البحث، نفترض أنه غير موجود لعدم توقف البوت
-    }
+    } catch (e) { return false; }
 }
 
-// --- 2. وظيفة سحب البيانات مع مؤقت أمان ---
+// --- 2. سحب البيانات مع مؤقت أمان 30 ثانية ---
 async function getArticleData(url) {
     let browser;
     try {
@@ -82,15 +79,15 @@ async function getArticleData(url) {
     }
 }
 
-// --- 3. وظيفة الذكاء الاصطناعي لإعادة الصياغة والأسئلة ---
+// --- 3. توليد المحتوى بالذكاء الاصطناعي ---
 async function generateSmartContent(article) {
     const prompt = `
     You are an Expert SEO Content Writer. Rewrite this article into a 1000+ words masterpiece.
-    Format:
-    [TITLE] Viral SEO Title [/TITLE]
-    [BODY] Detailed HTML Content (Use <h2>, <h3>, <p>, and <details><summary> for Interactive FAQ) [/BODY]
+    OUTPUT FORMAT:
+    [TITLE] Your Viral Title [/TITLE]
+    [BODY] Your HTML Content (Use <h2>, <h3>, <p>, and <details><summary> for FAQ) [/BODY]
     [TAGS] Keyword1, Keyword2, Keyword3 [/TAGS]
-    
+
     Article Title: ${article.title}
     Text: ${article.text}
     `;
@@ -105,9 +102,9 @@ async function generateSmartContent(article) {
     } catch (e) { return null; }
 }
 
-// --- 4. المحرك الرئيسي الذكي ---
+// --- 4. المحرك الرئيسي بالتنسيق الجديد ---
 async function startEmpireBot() {
-    console.log("🚀 Starting the Smart Anti-Duplicate Bot...");
+    console.log("🚀 Starting the Secure SEO Bot with Custom Layout...");
     
     const auth = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET);
     auth.setCredentials({ refresh_token: REFRESH_TOKEN });
@@ -115,20 +112,17 @@ async function startEmpireBot() {
 
     for (let source of SOURCES) {
         try {
-            console.log(`\n📂 Checking category: ${source.name}`);
+            console.log(`\n📂 Checking: ${source.name}`);
             const feed = await parser.parseURL(source.url);
-            const items = feed.items.slice(0, 10); // فحص أحدث 10 أخبار
+            const items = feed.items.slice(0, 8); 
 
             for (let item of items) {
-                // الفحص الجوهري: هل نشرنا هذا الخبر من قبل؟
-                const alreadyDone = await isAlreadyPublished(blogger, BLOG_ID, item.title);
-                
-                if (alreadyDone) {
-                    console.log(`⏭️ Skipping (Already Published): ${item.title}`);
-                    continue; // اذهب للخبر التالي في الـ RSS
+                // منع التكرار
+                if (await isDuplicate(blogger, BLOG_ID, item.title)) {
+                    console.log(`⏭️ Skipping Duplicate: ${item.title}`);
+                    continue;
                 }
 
-                // إذا كان خبراً جديداً، نبدأ العمل
                 const data = await getArticleData(item.link);
                 if (!data || data.text.length < 600) continue;
 
@@ -143,23 +137,43 @@ async function startEmpireBot() {
 
                 const coverImg = data.images[0] || "https://images.unsplash.com/photo-1518770660439-4636190af475";
 
+                // --- التنسيق المطلوب بدقة ---
                 const finalHtml = `
-                <div class="post-container" dir="ltr">
-                    <style>
-                        .post-container { font-family: 'Segoe UI', sans-serif; line-height: 1.8; color: #1a1a1a; }
-                        .main-img { width: 100%; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-                        h2 { color: #d32f2f; margin-top: 30px; border-bottom: 2px solid #eee; padding-bottom: 5px; }
-                        details { background: #f9f9f9; padding: 15px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #ddd; cursor: pointer; }
-                        summary { font-weight: bold; font-size: 19px; }
-                        .source-btn { display: inline-block; padding: 12px 20px; background: #222; color: #fff !important; text-decoration: none; border-radius: 5px; margin-top: 25px; font-weight: bold; }
-                    </style>
-                    <script type="application/ld+json">
-                    { "@context": "https://schema.org", "@type": "NewsArticle", "headline": "${viralTitle}", "image": ["${coverImg}"], "datePublished": "${new Date().toISOString()}" }
-                    </script>
-                    <img src="${coverImg}" class="main-img" alt="${viralTitle}">
-                    <div class="article-content">${cleanAiBody}</div>
-                    <a href="${data.link}" class="source-btn" rel="nofollow" target="_blank">Read Full Original Article ↗</a>
-                </div>
+<div class="post-container" dir="ltr">
+    <style>
+        .post-container { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.7; color: #1a1a1a; }
+        .main-img { width: 100%; height: auto; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h2 { color: #d32f2f; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; margin-top: 30px; }
+        p { margin-bottom: 20px; font-size: 18px; }
+        
+        /* تفاعلية الأسئلة */
+        details { background: #f9f9f9; padding: 15px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #eee; transition: all 0.3s; }
+        details[open] { background: #fff; border-left: 5px solid #d32f2f; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        summary { font-weight: bold; cursor: pointer; list-style: none; outline: none; font-size: 19px; }
+        summary::-webkit-details-marker { display: none; }
+        
+        .source-btn { display: inline-block; padding: 12px 25px; background: #222; color: #fff !important; text-decoration: none; border-radius: 50px; font-weight: bold; margin-top: 30px; }
+    </style>
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "NewsArticle",
+      "headline": "${viralTitle}",
+      "image": ["${coverImg}"],
+      "datePublished": "${new Date().toISOString()}",
+      "author": { "@type": "Person", "name": "Admin" }
+    }
+    </script>
+
+    <img src="${coverImg}" class="main-img" alt="${viralTitle}">
+    
+    <div class="article-content">
+        ${cleanAiBody}
+    </div>
+
+    <a href="${data.link}" class="source-btn" rel="nofollow noopener" target="_blank">View Original Research ↗</a>
+</div>
                 `;
 
                 await blogger.posts.insert({
@@ -167,18 +181,17 @@ async function startEmpireBot() {
                     requestBody: {
                         title: viralTitle,
                         content: finalHtml,
-                        labels: [...new Set([source.label, ...dynamicTags])].slice(0, 8)
+                        labels: [...new Set([source.label, ...dynamicTags])].slice(0, 10)
                     }
                 });
 
-                console.log(`✅ Successfully Published New Article: ${viralTitle}`);
-                await delay(15000); 
-                break; // انتقل للقسم التالي بعد نشر مقال واحد جديد
+                console.log(`✅ Published: ${viralTitle}`);
+                await delay(20000); 
+                break; 
             }
-        } catch (err) {
-            console.log(`❌ Error in category ${source.name}: ${err.message}`);
-        }
+        } catch (err) { console.log(`❌ Error in ${source.name}`); }
     }
+    console.log("🏁 Mission Accomplished.");
     process.exit(0);
 }
 
