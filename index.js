@@ -4,10 +4,10 @@ const { Readability } = require('@mozilla/readability');
 const cheerio = require('cheerio');
 const { google } = require('googleapis');
 const Groq = require('groq-sdk');
-const sharp = require('sharp');
-const axios = require('axios');
+const fs = require('fs'); // لإدارة ملف التخطي
+const cloudinary = require('cloudinary').v2; // مكتبة الصور
 
-// --- مكتبات التخطي لـ Puppeteer ---
+// --- مكتبات التخطي ---
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
@@ -19,8 +19,16 @@ const CLIENT_SECRET = "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";
 const REFRESH_TOKEN = "1//04yti9k2agPknCgYIARAAGAQSNwF-L9IrTZPKt5Fqbg2vrM9sBtOks9cnY4M7Idg0LToQnlbYGME06k20vcyr_SVmYk1H_yZJdEc"; 
 const GROQ_API_KEY = "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"; 
 
+// --- إعدادات Cloudinary (سجل مجاناً وضع بياناتك هنا) ---
+cloudinary.config({ 
+    cloud_name: 'YOUR_CLOUD_NAME', 
+    api_key: 'YOUR_API_KEY', 
+    api_secret: 'YOUR_API_SECRET' 
+});
+
 const groq = new Groq({ apiKey: GROQ_API_KEY });
 const parser = new Parser();
+const PUBLISHED_FILE = './published_urls.json'; // ملف حفظ الروابط المنشورة
 
 const SOURCES = [
     { name: "Gaming", url: "https://www.windowscentral.com/rss", label: "Gaming" },
@@ -32,95 +40,57 @@ const SOURCES = [
 ];
 
 function getRandomDelay() {
-    return Math.floor(Math.random() * (60000 - 30000 + 1)) + 30000; // بين 30 و 60 ثانية
+    return Math.floor(Math.random() * (120000 - 60000 + 1)) + 60000;
 }
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// --- 1. وظيفة جلب الروابط المنشورة من بلوجر لفحص التكرار ---
-async function fetchPublishedLinksFromBlogger(blogger) {
-    console.log("🔄 جاري فحص مدونة DeepLexa لجلب المقالات السابقة...");
-    let publishedLinks = [];
+// --- نظام التحقق من النشر (التخطي) ---
+function isPublished(url) {
+    if (!fs.existsSync(PUBLISHED_FILE)) return false;
+    const data = JSON.parse(fs.readFileSync(PUBLISHED_FILE));
+    return data.includes(url);
+}
+
+function markAsPublished(url) {
+    let data = [];
+    if (fs.existsSync(PUBLISHED_FILE)) {
+        data = JSON.parse(fs.readFileSync(PUBLISHED_FILE));
+    }
+    data.push(url);
+    fs.writeFileSync(PUBLISHED_FILE, JSON.stringify(data, null, 2));
+}
+
+// --- نظام معالجة ورفع الصور (Cloudinary) ---
+async function processAndUploadImage(imageUrl) {
     try {
-        const res = await blogger.posts.list({
-            blogId: BLOG_ID,
-            maxResults: 50,
-            fetchBodies: true 
+        const result = await cloudinary.uploader.upload(imageUrl, {
+            folder: "deeplexa_blog",
+            transformation: [
+                { width: 800, crop: "scale" }, // توحيد حجم الصور لسرعة الموقع
+                // إعدادات العلامة المائية: استبدل "DeepLexa" باسم مدونتك أو شعارك
+                { overlay: { font_family: "Arial", font_size: 45, font_weight: "bold", text: "DeepLexa.com" }, 
+                  gravity: "south_east", x: 20, y: 20, color: "white", opacity: 60 }
+            ]
         });
-        if (res.data.items) {
-            res.data.items.forEach(post => {
-                const match = post.content.match(/<a href="(.*?)" class="source-btn"/);
-                if (match && match[1]) {
-                    publishedLinks.push(match[1]);
-                }
-            });
-        }
-        console.log(`✅ تم سحب ${publishedLinks.length} مقال سابق لتجنب التكرار.`);
+        return result.secure_url; // إرجاع الرابط الجديد المحفوظ في Cloudinary
     } catch (e) {
-        console.error("❌ فشل في جلب المقالات من بلوجر:", e.message);
-    }
-    return publishedLinks;
-}
-
-// --- 2. معالجة الصور وإضافة العلامة المائية (DeepLexa) ---
-async function processImageWithWatermark(imageUrl) {
-    try {
-        const response = await axios({ url: imageUrl, responseType: 'arraybuffer', timeout: 15000 });
-        const buffer = Buffer.from(response.data);
-
-        const width = 800;
-        const height = 450;
-        
-        const svgWatermark = `
-        <svg width="${width}" height="${height}">
-            <style>
-                .watermark { fill: #ffffff; font-size: 26px; font-weight: bold; font-family: 'Segoe UI', Arial, sans-serif; }
-                .bg { fill: rgba(0, 0, 0, 0.6); }
-            </style>
-            <rect x="${width - 160}" y="${height - 50}" width="150" height="40" rx="5" class="bg"/>
-            <text x="${width - 145}" y="${height - 22}" class="watermark">DeepLexa</text>
-        </svg>
-        `;
-
-        const processedBuffer = await sharp(buffer)
-            .resize(width, height, { fit: 'cover' })
-            .composite([{ 
-                input: Buffer.from(svgWatermark), 
-                top: 0, 
-                left: 0 
-            }])
-            .jpeg({ quality: 80 })
-            .toBuffer();
-
-        return `data:image/jpeg;base64,${processedBuffer.toString('base64')}`;
-    } catch (err) {
-        console.error("⚠️ فشل معالجة الصورة، سيتم استخدام الرابط الأصلي:", err.message);
-        return imageUrl; 
+        console.error("⚠️ خطأ في معالجة الصورة عبر Cloudinary، سيتم استخدام الصورة الأصلية:", e.message);
+        return imageUrl;
     }
 }
 
-// --- 3. جلب محتوى المقال الأصلي (Puppeteer) ---
 async function getArticleData(url) {
     let browser;
     try {
         browser = await puppeteer.launch({
             headless: "new",
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-        
-        // تسريع التصفح ومنع تحميل الموارد غير الضرورية
-        await page.setRequestInterception(true);
-        page.on('request', (req) => {
-            if(['image', 'stylesheet', 'font', 'media'].includes(req.resourceType())) {
-                req.abort();
-            } else {
-                req.continue();
-            }
-        });
-
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+
         const html = await page.content();
         await browser.close();
 
@@ -144,9 +114,10 @@ async function getArticleData(url) {
 
         return { 
             title: article.title, 
-            text: article.textContent.trim().slice(0, 6000), 
-            images: images.filter(img => !img.includes('avatar') && !img.includes('logo')), 
-            link: url
+            text: article.textContent.trim().slice(0, 8000), 
+            images: images.filter(img => !img.includes('avatar')), 
+            link: url,
+            excerpt: article.textContent.trim().slice(0, 160)
         };
     } catch (e) {
         if (browser) await browser.close();
@@ -154,133 +125,103 @@ async function getArticleData(url) {
     }
 }
 
-// --- 4. توليد المحتوى بالذكاء الاصطناعي (بتنسيق JSON) ---
 async function generateSmartContent(article) {
     const prompt = `
-    You are an Expert SEO Content Writer and Tech Blogger for 'DeepLexa'. 
-    Your goal is to write a highly valuable, long-form SEO article (800 - 1200 words) based on the provided source text.
-    DO NOT just summarize. Expand on the ideas, add context, explain technical terms, and provide a unique perspective.
+    You are an Expert SEO Content Writer & Schema.org Specialist. 
+    Rewrite the following article into a long-form (1000+ words) masterpiece.
+    
+    OUTPUT FORMAT (MANDATORY EXACTLY AS BELOW):
+    [TITLE] Your Viral Title [/TITLE]
+    [ALT] Highly descriptive SEO Alt Text for the main image (Max 8 words) [/ALT]
+    [BODY] Your HTML Content [/BODY]
+    [TAGS] Keyword1, Keyword2, Keyword3, Keyword4 [/TAGS]
 
     CRITICAL RULES:
-    1. Use HTML elements properly: <h2> for main sections, <h3> for sub-sections, <ul> and <li> for lists.
-    2. Include an Introduction and a Conclusion.
-    3. MUST include a FAQ Section at the end using ONLY <details><summary> tags. Example: <details><summary>Question?</summary><p>Answer</p></details>.
-    4. Output MUST be a valid JSON object. No markdown formatting outside the JSON.
+    1. FAQ Section: Use ONLY <details><summary> tags for questions. Example: <details><summary>Question?</summary><p>Answer</p></details>.
+    2. Style: Professional, informative, and high-quality.
+    3. HTML: Use <h2>, <h3>, <ul>, <li>. No markdown.
+    4. Tags: Provide 5-8 relevant SEO keywords.
 
-    JSON FORMAT REQUIRED:
-    {
-      "title": "A Viral, Click-Worthy SEO Title (Max 60 chars)",
-      "body": "The complete HTML formatted article content here",
-      "tags": ["tag1", "tag2", "tag3", "tag4"]
-    }
-
-    Source Title: ${article.title}
-    Source Text: ${article.text}
+    Article Info:
+    Title: ${article.title}
+    Text: ${article.text}
     `;
 
     try {
-        const completion = await Promise.race([
-            groq.chat.completions.create({
-                messages: [{ role: "user", content: prompt }],
-                model: "llama-3.3-70b-versatile",
-                temperature: 0.7, 
-                response_format: { type: "json_object" } 
-            }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error("Groq API Timeout")), 60000))
-        ]);
-
-        return JSON.parse(completion.choices[0].message.content);
-    } catch (e) { 
-        console.error("\n❌ خطأ في الذكاء الاصطناعي (Groq):", e.message); 
-        return null; 
-    }
+        const completion = await groq.chat.completions.create({
+            messages: [{ role: "system", content: prompt }],
+            model: "llama-3.3-70b-versatile",
+            temperature: 0.5 
+        });
+        return completion.choices[0].message.content;
+    } catch (e) { return null; }
 }
 
-// --- الدالة الرئيسية (The Master Bot) ---
 async function startEmpireBot() {
-    console.log("🚀 Starting DeepLexa SEO Bot...");
-    let postedCount = 0;
+    console.log("🚀 Starting the Advanced SEO Bot 2026...");
     
-    const auth = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET);
-    auth.setCredentials({ refresh_token: REFRESH_TOKEN });
-    const blogger = google.blogger({ version: 'v3', auth });
-
-    let publishedLinks = await fetchPublishedLinksFromBlogger(blogger);
-
     for (let source of SOURCES) {
         try {
-            console.log(`\n🔍 جاري فحص مصدر: ${source.name}`);
-            
-            // --- تجاوز حظر جلب الـ RSS باستخدام Axios ---
-            const response = await axios.get(source.url, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'application/rss+xml, application/xml;q=0.9, */*;q=0.8'
-                },
-                timeout: 20000 
-            });
-
-            const feed = await parser.parseString(response.data);
-            const items = feed.items.slice(0, 10); 
-
-            if (!items || items.length === 0) {
-                console.log(`⚠️ المصدر ${source.name} فارغ حالياً.`);
-                continue;
-            }
+            const feed = await parser.parseURL(source.url);
+            const items = feed.items.slice(0, 5);
 
             for (let item of items) {
-                if (publishedLinks.includes(item.link)) {
-                    console.log(`⏭️ تخطي (موجود مسبقاً): ${item.title}`);
+                // 1. التخطي: فحص ما إذا كان الرابط تم نشره مسبقاً
+                if (isPublished(item.link)) {
+                    console.log(`⏩ تخطي مقال منشور مسبقاً: ${item.title}`);
                     continue; 
                 }
 
-                console.log(`✍️ جاري معالجة مقال جديد: ${item.title}`);
                 const data = await getArticleData(item.link);
-                
-                if (!data || data.text.length < 500) {
-                    console.log(`⚠️ تخطي: المحتوى الأصلي قصير جداً ولا يصلح كمصدر.`);
-                    continue;
-                }
+                if (!data || data.text.length < 600) continue;
 
                 const aiResponse = await generateSmartContent(data);
+                if (!aiResponse) continue;
+
+                // استخراج البيانات من استجابة AI
+                const viralTitle = aiResponse.match(/\[TITLE\](.*?)\[\/TITLE\]/s)?.[1].trim() || data.title;
+                const cleanAiBody = aiResponse.match(/\[BODY\](.*?)\[\/BODY\]/s)?.[1].trim();
+                const imgAltText = aiResponse.match(/\[ALT\](.*?)\[\/ALT\]/s)?.[1].trim() || viralTitle; // استخراج Alt Text المخصص
+                const dynamicTags = aiResponse.match(/\[TAGS\](.*?)\[\/TAGS\]/s)?.[1].split(',').map(t => t.trim()) || [];
                 
-                if (!aiResponse || !aiResponse.body) {
-                    console.log(`⚠️ تخطي: مشكلة في استجابة الذكاء الاصطناعي أو فشل التنسيق.`);
-                    continue;
-                }
+                if (!cleanAiBody) continue;
 
-                const viralTitle = aiResponse.title || data.title;
-                const cleanAiBody = aiResponse.body;
-                const dynamicTags = Array.isArray(aiResponse.tags) ? aiResponse.tags : [];
+                let coverImg = data.images[0] || "https://images.unsplash.com/photo-1518770660439-4636190af475";
                 
-                if (!cleanAiBody || cleanAiBody.length < 500) {
-                    console.log(`⚠️ تخطي: الذكاء الاصطناعي ولّد محتوى قصير جداً.`);
-                    continue;
-                }
+                // 2. معالجة الصورة: رفعها وإضافة العلامة المائية
+                console.log("🖼️ جاري معالجة الصورة وإضافة العلامة المائية...");
+                coverImg = await processAndUploadImage(coverImg);
 
-                console.log(`🎨 جاري تصميم وحفظ حقوق الصورة لـ DeepLexa...`);
-                const originalImg = data.images && data.images[0] ? data.images[0] : "https://images.unsplash.com/photo-1518770660439-4636190af475";
-                const finalImage = await processImageWithWatermark(originalImg);
-
+                // --- هيكل المقال المطور للـ SEO ---
                 const finalHtml = `
                 <div class="post-container" dir="ltr">
                     <style>
-                        .post-container { font-family: 'Segoe UI', Tahoma, sans-serif; line-height: 1.7; color: #222; }
-                        .main-img { width: 100%; height: auto; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-                        h2 { color: #1a73e8; border-bottom: 2px solid #e8eaed; padding-bottom: 8px; margin-top: 30px; font-size: 24px; }
-                        h3 { color: #333; margin-top: 20px; font-size: 20px; }
-                        p { font-size: 17px; margin-bottom: 15px; }
-                        ul { margin-bottom: 15px; padding-left: 20px; }
-                        li { font-size: 17px; margin-bottom: 8px; }
-                        details { background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #dadce0; transition: all 0.3s ease; }
-                        details[open] { background: #fff; border-left: 4px solid #1a73e8; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-                        summary { font-weight: bold; cursor: pointer; list-style: none; font-size: 18px; color: #202124; margin-bottom: 5px; }
+                        .post-container { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.7; color: #1a1a1a; }
+                        .main-img { width: 100%; height: auto; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+                        h2 { color: #d32f2f; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; margin-top: 30px; }
+                        p { margin-bottom: 20px; font-size: 18px; }
+                        
+                        /* تفاعلية الأسئلة */
+                        details { background: #f9f9f9; padding: 15px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #eee; transition: all 0.3s; }
+                        details[open] { background: #fff; border-left: 5px solid #d32f2f; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+                        summary { font-weight: bold; cursor: pointer; list-style: none; outline: none; font-size: 19px; }
                         summary::-webkit-details-marker { display: none; }
-                        .source-btn { display: inline-block; padding: 10px 20px; background: #202124; color: #fff !important; text-decoration: none; border-radius: 25px; font-weight: bold; margin-top: 25px; font-size: 14px; transition: background 0.3s; }
-                        .source-btn:hover { background: #1a73e8; }
+                        
+                        .source-btn { display: inline-block; padding: 12px 25px; background: #222; color: #fff !important; text-decoration: none; border-radius: 50px; font-weight: bold; margin-top: 30px; }
                     </style>
 
-                    <img src="${finalImage}" class="main-img" alt="${viralTitle}" title="${viralTitle}">
+                    <script type="application/ld+json">
+                    {
+                      "@context": "https://schema.org",
+                      "@type": "NewsArticle",
+                      "headline": "${viralTitle}",
+                      "image": ["${coverImg}"],
+                      "datePublished": "${new Date().toISOString()}",
+                      "author": { "@type": "Person", "name": "DeepLexa Admin" }
+                    }
+                    </script>
+
+                    <img src="${coverImg}" class="main-img" alt="${imgAltText}" title="${imgAltText}">
                     
                     <div class="article-content">
                         ${cleanAiBody}
@@ -290,39 +231,28 @@ async function startEmpireBot() {
                 </div>
                 `;
 
+                const auth = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET);
+                auth.setCredentials({ refresh_token: REFRESH_TOKEN });
+                const blogger = google.blogger({ version: 'v3', auth });
+
                 await blogger.posts.insert({
                     blogId: BLOG_ID,
                     requestBody: {
                         title: viralTitle,
                         content: finalHtml,
-                        labels: [...new Set([source.label, ...dynamicTags])].slice(0, 6) 
+                        labels: [...new Set([source.label, ...dynamicTags])].slice(0, 10) 
                     }
                 });
 
-                console.log(`✅ تم النشر بنجاح على DeepLexa: ${viralTitle}`);
-                
-                publishedLinks.push(data.link);
-                postedCount++;
+                // 3. التخطي: إضافة الرابط إلى ملف الروابط المنشورة
+                markAsPublished(item.link);
 
-                const waitTime = getRandomDelay();
-                console.log(`⏳ انتظار ${(waitTime / 1000).toFixed(0)} ثانية قبل الانتقال للمصدر التالي...`);
-                await delay(waitTime);
-                
-                break; 
+                console.log(`✅ تم النشر بنجاح مع صورة بعلامة مائية: ${viralTitle}`);
+                await delay(getRandomDelay());
+                break; // يحمل مقال واحد من كل قسم ثم ينتقل للقسم الآخر
             }
-        } catch (err) { 
-            // طباعة رسالة الخطأ بشكل تفصيلي في حال الرفض
-            console.error(`❌ فشل معالجة القسم ${source.name}:`, err.response ? `${err.response.status} ${err.response.statusText}` : err.message); 
-        }
+        } catch (err) { console.error(`❌ فشل القسم ${source.name}:`, err.message); }
     }
-
-    if (postedCount === 0) {
-        console.log("\n🛑 انتهت العملية: لم يتم العثور على مقالات جديدة في جميع المصادر.");
-    } else {
-        console.log(`\n🎉 تم بنجاح! نُشر ${postedCount} مقالات حصرية على DeepLexa.`);
-    }
-    
-    process.exit(0);
 }
 
 startEmpireBot();
