@@ -4,8 +4,6 @@ const { Readability } = require('@mozilla/readability');
 const cheerio = require('cheerio');
 const { google } = require('googleapis');
 const Groq = require('groq-sdk');
-const fs = require('fs'); // لإدارة ملف التخطي
-const cloudinary = require('cloudinary').v2; // مكتبة الصور
 
 // --- مكتبات التخطي ---
 const puppeteer = require('puppeteer-extra');
@@ -19,16 +17,8 @@ const CLIENT_SECRET = "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";
 const REFRESH_TOKEN = "1//04yti9k2agPknCgYIARAAGAQSNwF-L9IrTZPKt5Fqbg2vrM9sBtOks9cnY4M7Idg0LToQnlbYGME06k20vcyr_SVmYk1H_yZJdEc"; 
 const GROQ_API_KEY = "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"; 
 
-// --- إعدادات Cloudinary (سجل مجاناً وضع بياناتك هنا) ---
-cloudinary.config({ 
-    cloud_name: 'YOUR_CLOUD_NAME', 
-    api_key: 'YOUR_API_KEY', 
-    api_secret: 'YOUR_API_SECRET' 
-});
-
 const groq = new Groq({ apiKey: GROQ_API_KEY });
 const parser = new Parser();
-const PUBLISHED_FILE = './published_urls.json'; // ملف حفظ الروابط المنشورة
 
 const SOURCES = [
     { name: "Gaming", url: "https://www.windowscentral.com/rss", label: "Gaming" },
@@ -44,41 +34,6 @@ function getRandomDelay() {
 }
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-// --- نظام التحقق من النشر (التخطي) ---
-function isPublished(url) {
-    if (!fs.existsSync(PUBLISHED_FILE)) return false;
-    const data = JSON.parse(fs.readFileSync(PUBLISHED_FILE));
-    return data.includes(url);
-}
-
-function markAsPublished(url) {
-    let data = [];
-    if (fs.existsSync(PUBLISHED_FILE)) {
-        data = JSON.parse(fs.readFileSync(PUBLISHED_FILE));
-    }
-    data.push(url);
-    fs.writeFileSync(PUBLISHED_FILE, JSON.stringify(data, null, 2));
-}
-
-// --- نظام معالجة ورفع الصور (Cloudinary) ---
-async function processAndUploadImage(imageUrl) {
-    try {
-        const result = await cloudinary.uploader.upload(imageUrl, {
-            folder: "deeplexa_blog",
-            transformation: [
-                { width: 800, crop: "scale" }, // توحيد حجم الصور لسرعة الموقع
-                // إعدادات العلامة المائية: استبدل "DeepLexa" باسم مدونتك أو شعارك
-                { overlay: { font_family: "Arial", font_size: 45, font_weight: "bold", text: "DeepLexa.com" }, 
-                  gravity: "south_east", x: 20, y: 20, color: "white", opacity: 60 }
-            ]
-        });
-        return result.secure_url; // إرجاع الرابط الجديد المحفوظ في Cloudinary
-    } catch (e) {
-        console.error("⚠️ خطأ في معالجة الصورة عبر Cloudinary، سيتم استخدام الصورة الأصلية:", e.message);
-        return imageUrl;
-    }
-}
 
 async function getArticleData(url) {
     let browser;
@@ -117,7 +72,7 @@ async function getArticleData(url) {
             text: article.textContent.trim().slice(0, 8000), 
             images: images.filter(img => !img.includes('avatar')), 
             link: url,
-            excerpt: article.textContent.trim().slice(0, 160)
+            excerpt: article.textContent.trim().slice(0, 160) // لوصف الـ SEO
         };
     } catch (e) {
         if (browser) await browser.close();
@@ -125,14 +80,14 @@ async function getArticleData(url) {
     }
 }
 
+// --- وظيفة الذكاء الاصطناعي المطورة ---
 async function generateSmartContent(article) {
     const prompt = `
     You are an Expert SEO Content Writer & Schema.org Specialist. 
     Rewrite the following article into a long-form (1000+ words) masterpiece.
     
-    OUTPUT FORMAT (MANDATORY EXACTLY AS BELOW):
+    OUTPUT FORMAT (MANDATORY):
     [TITLE] Your Viral Title [/TITLE]
-    [ALT] Highly descriptive SEO Alt Text for the main image (Max 8 words) [/ALT]
     [BODY] Your HTML Content [/BODY]
     [TAGS] Keyword1, Keyword2, Keyword3, Keyword4 [/TAGS]
 
@@ -166,12 +121,6 @@ async function startEmpireBot() {
             const items = feed.items.slice(0, 5);
 
             for (let item of items) {
-                // 1. التخطي: فحص ما إذا كان الرابط تم نشره مسبقاً
-                if (isPublished(item.link)) {
-                    console.log(`⏩ تخطي مقال منشور مسبقاً: ${item.title}`);
-                    continue; 
-                }
-
                 const data = await getArticleData(item.link);
                 if (!data || data.text.length < 600) continue;
 
@@ -181,16 +130,11 @@ async function startEmpireBot() {
                 // استخراج البيانات من استجابة AI
                 const viralTitle = aiResponse.match(/\[TITLE\](.*?)\[\/TITLE\]/s)?.[1].trim() || data.title;
                 const cleanAiBody = aiResponse.match(/\[BODY\](.*?)\[\/BODY\]/s)?.[1].trim();
-                const imgAltText = aiResponse.match(/\[ALT\](.*?)\[\/ALT\]/s)?.[1].trim() || viralTitle; // استخراج Alt Text المخصص
                 const dynamicTags = aiResponse.match(/\[TAGS\](.*?)\[\/TAGS\]/s)?.[1].split(',').map(t => t.trim()) || [];
                 
                 if (!cleanAiBody) continue;
 
-                let coverImg = data.images[0] || "https://images.unsplash.com/photo-1518770660439-4636190af475";
-                
-                // 2. معالجة الصورة: رفعها وإضافة العلامة المائية
-                console.log("🖼️ جاري معالجة الصورة وإضافة العلامة المائية...");
-                coverImg = await processAndUploadImage(coverImg);
+                const coverImg = data.images[0] || "https://images.unsplash.com/photo-1518770660439-4636190af475";
 
                 // --- هيكل المقال المطور للـ SEO ---
                 const finalHtml = `
@@ -217,11 +161,11 @@ async function startEmpireBot() {
                       "headline": "${viralTitle}",
                       "image": ["${coverImg}"],
                       "datePublished": "${new Date().toISOString()}",
-                      "author": { "@type": "Person", "name": "DeepLexa Admin" }
+                      "author": { "@type": "Person", "name": "Admin" }
                     }
                     </script>
 
-                    <img src="${coverImg}" class="main-img" alt="${imgAltText}" title="${imgAltText}">
+                    <img src="${coverImg}" class="main-img" alt="${viralTitle}">
                     
                     <div class="article-content">
                         ${cleanAiBody}
@@ -240,16 +184,13 @@ async function startEmpireBot() {
                     requestBody: {
                         title: viralTitle,
                         content: finalHtml,
-                        labels: [...new Set([source.label, ...dynamicTags])].slice(0, 10) 
+                        labels: [...new Set([source.label, ...dynamicTags])].slice(0, 10) // دمج التاجات الثابتة والديناميكية
                     }
                 });
 
-                // 3. التخطي: إضافة الرابط إلى ملف الروابط المنشورة
-                markAsPublished(item.link);
-
-                console.log(`✅ تم النشر بنجاح مع صورة بعلامة مائية: ${viralTitle}`);
+                console.log(`✅ تم النشر بنجاح مع تاجات ديناميكية: ${viralTitle}`);
                 await delay(getRandomDelay());
-                break; // يحمل مقال واحد من كل قسم ثم ينتقل للقسم الآخر
+                break; 
             }
         } catch (err) { console.error(`❌ فشل القسم ${source.name}:`, err.message); }
     }
