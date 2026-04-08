@@ -2,8 +2,8 @@ name: Google News Blogger Bot
 
 on:
   schedule:
-   - cron: '0 */5 * * *' # يعمل كل 5 ساعات (إذا أردته كل ساعة استخدم '0 * * * *')
-  workflow_dispatch: # زر التشغيل اليدوي
+    - cron: '0 */1 * * *' # ينشر خبر كل 1 ساعات لتواكب التريند
+  workflow_dispatch:
 
 jobs:
   run-bot:
@@ -17,15 +17,10 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Chrome Dependencies (For Puppeteer)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libnss3 libxss1 libasound2 libatk-bridge2.0-0 libgtk-3-0
-
       - name: Install Dependencies
         run: |
           npm install --force
-          npm install puppeteer puppeteer-extra puppeteer-extra-plugin-stealth cloudinary
+          npm install puppeteer puppeteer-extra puppeteer-extra-plugin-stealth
 
       - name: Execution
         run: node index.js
