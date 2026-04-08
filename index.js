@@ -175,13 +175,13 @@ async function publishToBlogger(aiData, mainImage, sourceLabel, readTime, curren
             <h1>${escapeHtml(aiData.seoTitle)}</h1>
             <div class="meta">
                 <span><i class="far fa-calendar-alt"></i> ${currentDate}</span>
-                <span><i class="far fa-user"></i> Tech Insights</span>
+                <span><i class="far fa-user"></i> DeepLexa</span>
                 <span><i class="far fa-clock"></i> ${readTime} min read</span>
             </div>
 
             <div class="featured-img">
                 <img src="${escapeHtml(mainImage)}" alt="${escapeHtml(aiData.seoTitle)}">
-                <div class="watermark"><i class="fas fa-copyright"></i> Tech Insights ${new Date().getFullYear()}</div>
+                <div class="watermark"><i class="fas fa-copyright"></i> DeepLexa ${new Date().getFullYear()}</div>
             </div>
 
             <div class="article-content">
@@ -191,8 +191,8 @@ async function publishToBlogger(aiData, mainImage, sourceLabel, readTime, curren
             <div class="author-box">
                 <div class="author-avatar"><i class="fas fa-chalkboard-user"></i></div>
                 <div>
-                    <h4 style="margin-bottom: 4px;">Tech Insights Team</h4>
-                    <p style="font-size: 0.85rem; color: #475569;">Professional tech journalism & analysis</p>
+                    <h4 style="margin-bottom: 4px;">Deep Lexa Team</h4>
+                    <p style="font-size: 0.85rem; color: #475569;">Quick and useful content including new releases and analytics</p>
                 </div>
             </div>
         </div>
