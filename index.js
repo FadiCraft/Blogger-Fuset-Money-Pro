@@ -74,10 +74,14 @@ async function getArticleData(url) {
         const $ = cheerio.load(article.content);
         let images = [];
         
+        // سحب جميع الصور المتاحة في المقال
         $('img').each((i, el) => {
             let src = $(el).attr('src') || $(el).attr('data-src') || $(el).attr('srcset');
             if (src && src.startsWith('http')) {
-                images.push(src.split(' ')[0]);
+                let cleanUrl = src.split(' ')[0];
+                if (!images.includes(cleanUrl)) {
+                    images.push(cleanUrl);
+                }
             }
         });
 
@@ -89,7 +93,7 @@ async function getArticleData(url) {
         return { 
             title: article.title, 
             text: article.textContent.trim().slice(0, 7000), 
-            images: images.filter(img => !img.includes('avatar') && !img.includes('logo')), 
+            images: images.filter(img => !img.includes('avatar') && !img.includes('logo') && !img.includes('icon')), 
             link: url 
         };
     } catch (e) { 
@@ -99,26 +103,39 @@ async function getArticleData(url) {
 }
 
 async function generateSmartContent(article) {
+    // فصل الصورة الأولى كغلاف، وباقي الصور لاستخدامها داخل المقال
+    const extraImages = article.images && article.images.length > 1 ? article.images.slice(1, 4) : [];
+
     const prompt = `
-    You are an Elite SEO Expert and Copywriter. Analyze the article and rewrite it to be 100% unique, highly engaging, and perfectly optimized for AdSense and Google Search. 
+    You are an Elite SEO Expert and Copywriter. Rewrite the article to be 100% unique, engaging, and perfectly optimized for Google Search.
+    Language MUST be English.
+    
+    Available extra image URLs to use inside the article body:
+    ${JSON.stringify(extraImages)}
     
     You MUST output strictly in JSON format. Do not add any text outside the JSON block.
-    
     {
         "seoTitle": "A click-worthy, highly viral, and SEO-optimized title (Max 60 chars)",
-        "metaDescription": "A compelling meta description containing the main keyword (Max 150 chars)",
-        "keywords": ["Keyword1", "Keyword2", "Keyword3", "Keyword4", "Keyword5"], 
+        "metaDescription": "A compelling meta description containing the main keyword",
+        "keywords": ["Keyword1", "Keyword2", "Keyword3", "Keyword4"], 
         "htmlContent": "The entire rewritten HTML article body"
     }
 
     RULES FOR 'htmlContent':
-    1. Structure: Start with a captivating introduction paragraph. Use <h2> and <h3> tags for all subheadings.
-    2. AdSense Friendly: Use short paragraphs (2-3 sentences max) to allow ad insertions naturally.
-    3. LSI Keywords: Naturally bold (<strong>) 4-6 important LSI keywords throughout the text.
-    4. Lists: Include at least one bulleted list (<ul><li>) or numbered list.
-    5. Table of Contents: Create a short <div class='toc'><ul>...</ul></div> at the top.
-    6. FAQ Section: End the article with an '<h2>Frequently Asked Questions (FAQ)</h2>' containing 3 relevant questions and answers.
-    7. Language: English. Tone: Professional, informative, and engaging. DO NOT output the <h1> tag in the htmlContent.
+    1. Do NOT include <h1>, <html>, <head>, or <body> tags. Output only the content.
+    2. Use <h2> and <h3> tags for all subheadings.
+    3. Include at least one "Tip Box" using this EXACT HTML structure:
+       <div class="tip-box">
+           <strong><i class="fas fa-lightbulb"></i> Pro Tip:</strong>
+           <p>Your valuable tip here...</p>
+       </div>
+    4. IF there are extra image URLs provided above, you MUST insert them naturally between sections using this EXACT HTML structure:
+       <div class="content-img">
+           <img src="IMAGE_URL_HERE" alt="Relevant SEO Alt Text">
+           <div class="caption">A short descriptive caption</div>
+       </div>
+    5. Write short paragraphs (2-3 sentences max) to improve readability.
+    6. Use Bullet Points (<ul><li>) and bold text (<strong>) for important keywords.
 
     Original Title: "${article.title}"
     Content to rewrite: ${article.text}
@@ -156,7 +173,11 @@ async function startEmpireBot() {
                     ? data.images[0] 
                     : "https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&q=80";
 
-                // Schema Markup for SEO
+                // حساب وقت القراءة وتاريخ اليوم
+                const wordCount = aiData.htmlContent.replace(/<[^>]*>?/gm, '').split(' ').length;
+                const readTime = Math.max(1, Math.ceil(wordCount / 200));
+                const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
                 const schemaJSON = {
                     "@context": "https://schema.org",
                     "@type": "NewsArticle",
@@ -172,48 +193,85 @@ async function startEmpireBot() {
                 ${JSON.stringify(schemaJSON)}
                 </script>
                 
-                <div class="main-container" dir="ltr">
+                <div class="main-wrapper" dir="ltr">
                     <style>
-                        .main-container { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #202124; line-height: 1.8; max-width: 850px; margin: 0 auto; padding: 10px; }
-                        .hero-section { position: relative; border-radius: 16px; overflow: hidden; margin-bottom: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-                        .hero-section img { width: 100%; height: auto; max-height: 500px; object-fit: cover; display: block; }
-                        .hero-overlay { position: absolute; bottom: 0; background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%); width: 100%; padding: 40px 25px 20px; color: white; box-sizing: border-box;}
-                        .badge { background: #1a73e8; color: white; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; text-transform: uppercase; margin-bottom: 15px; display: inline-block; letter-spacing: 0.5px; }
-                        .hero-overlay h1 { margin:0; font-size: 32px; font-weight: 700; line-height: 1.3; text-shadow: 1px 1px 3px rgba(0,0,0,0.5); }
-                        .toc { background: #f8f9fa; border: 1px solid #e8eaed; border-radius: 8px; padding: 20px; margin-bottom: 30px; }
-                        .toc ul { list-style: none; padding-left: 0; margin: 0; }
-                        .toc li { margin-bottom: 10px; border-bottom: 1px solid #e8eaed; padding-bottom: 5px; }
-                        .toc li::before { content: "🎯 "; }
-                        .article-body h2 { color: #1a73e8; font-size: 26px; border-bottom: 2px solid #e8eaed; padding-bottom: 10px; margin-top: 40px; margin-bottom: 20px; font-weight: 600;}
-                        .article-body h3 { color: #3c4043; font-size: 22px; margin-top: 30px; font-weight: 600;}
-                        .article-body p { margin-bottom: 20px; font-size: 18px; color: #4a4d51; letter-spacing: 0.2px; }
-                        .article-body strong { color: #202124; background: #fff3e0; padding: 0 4px; border-radius: 3px; }
-                        .article-body ul, .article-body ol { background: #f8f9fa; padding: 20px 20px 20px 40px; border-radius: 8px; border-left: 4px solid #1a73e8; margin-bottom: 25px;}
-                        .article-body li { margin-bottom: 10px; font-size: 18px; color: #4a4d51; }
-                        .source-link { display: inline-block; text-align: center; margin-top: 40px; padding: 14px 28px; background: #1a73e8; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 600; transition: background 0.3s; box-shadow: 0 2px 6px rgba(26,115,232,0.4); }
-                        .source-link:hover { background: #1557b0; }
-                        @media (max-width: 600px) { .hero-overlay h1 { font-size: 24px; } .article-body h2 { font-size: 22px; } .article-body p { font-size: 16px; } }
+                        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+                        @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css');
+                        
+                        .main-wrapper { font-family: 'Inter', sans-serif; background: transparent; color: #1e2a3e; line-height: 1.7; padding: 10px 0; }
+                        .article-container { max-width: 880px; margin: 0 auto; background: white; border-radius: 24px; padding: 10px 20px 30px; }
+                        
+                        .article-header { margin-bottom: 30px; border-bottom: 2px solid #eef2f6; padding-bottom: 20px; }
+                        .article-category { display: inline-block; background: #eef2ff; color: #2563eb; font-size: 0.85rem; font-weight: 700; padding: 6px 14px; border-radius: 30px; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.5px;}
+                        .article-container h1 { font-size: 2.2rem; font-weight: 800; line-height: 1.3; margin-bottom: 16px; color: #0f172a; }
+                        .article-meta { display: flex; flex-wrap: wrap; gap: 18px; font-size: 0.9rem; color: #64748b; margin-top: 10px; font-weight: 500;}
+                        .article-meta i { margin-right: 6px; color: #3b82f6; }
+                        
+                        .featured-image { margin: 20px 0 30px; border-radius: 20px; overflow: hidden; box-shadow: 0 12px 24px -12px rgba(0,0,0,0.15); }
+                        .featured-image img { width: 100%; height: auto; max-height: 500px; object-fit: cover; display: block; transition: transform 0.3s ease; }
+                        .featured-image img:hover { transform: scale(1.02); }
+                        
+                        .article-content h2 { font-size: 1.8rem; font-weight: 700; margin: 35px 0 15px 0; padding-left: 14px; border-left: 5px solid #3b82f6; color: #0f172a; }
+                        .article-content h3 { font-size: 1.4rem; font-weight: 600; margin: 28px 0 12px 0; color: #1e293b; }
+                        .article-content p { margin-bottom: 1.2rem; font-size: 1.1rem; color: #334155; }
+                        .article-content a { color: #2563eb; text-decoration: none; border-bottom: 1px dashed #94a3b8; }
+                        .article-content a:hover { color: #1d4ed8; border-bottom-style: solid; }
+                        .article-content ul, .article-content ol { margin: 18px 0 22px 30px; font-size: 1.05rem; color: #334155;}
+                        .article-content li { margin-bottom: 8px; }
+                        
+                        .tip-box { background: #f0f9ff; border-left: 4px solid #0ea5e9; padding: 20px 24px; border-radius: 16px; margin: 30px 0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+                        .tip-box strong { color: #0284c7; display: flex; align-items: center; gap: 8px; font-size: 1.2rem; margin-bottom: 10px; }
+                        .tip-box p { margin: 0 !important; font-size: 1.05rem; color: #0c4a6e; }
+                        
+                        .content-img { margin: 35px 0; text-align: center; }
+                        .content-img img { max-width: 100%; border-radius: 16px; box-shadow: 0 8px 20px rgba(0,0,0,0.1); }
+                        .caption { font-size: 0.85rem; color: #64748b; margin-top: 10px; font-style: italic; }
+                        
+                        .author-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 20px; padding: 25px; margin: 50px 0 20px; display: flex; flex-wrap: wrap; gap: 20px; align-items: center; }
+                        .author-avatar { width: 70px; height: 70px; background: #e2e8f0; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; color: #475569; }
+                        .author-info { flex: 1; min-width: 200px; }
+                        .author-info h4 { font-size: 1.2rem; font-weight: 700; margin: 0 0 6px 0; color: #0f172a;}
+                        .author-info p { margin: 0; font-size: 0.95rem; color: #475569;}
+                        
+                        @media (max-width: 650px) {
+                            .article-container h1 { font-size: 1.8rem; }
+                            .article-content h2 { font-size: 1.5rem; }
+                            .article-content p { font-size: 1rem; }
+                        }
                     </style>
 
-                    <div class="hero-section">
-                        <img src="${coverImg}" alt="${aiData.seoTitle}">
-                        <div class="hero-overlay">
-                            <div class="badge">${source.label}</div>
+                    <div class="article-container">
+                        <div class="article-header">
+                            <span class="article-category"><i class="fas fa-bolt"></i> ${source.label}</span>
                             <h1>${aiData.seoTitle}</h1>
+                            <div class="article-meta">
+                                <span><i class="far fa-calendar-alt"></i> ${currentDate}</span>
+                                <span><i class="far fa-user"></i> Tech Desk</span>
+                                <span><i class="far fa-clock"></i> ${readTime} min read</span>
+                            </div>
                         </div>
-                    </div>
 
-                    <div class="article-body">
-                        ${aiData.htmlContent}
-                    </div>
+                        <div class="featured-image">
+                            <img src="${coverImg}" alt="${aiData.seoTitle}">
+                        </div>
 
-                    <div style="text-align: center;">
-                        <a href="${data.link}" class="source-link" target="_blank" rel="nofollow noopener noreferrer">View Original Source ↗</a>
+                        <div class="article-content">
+                            ${aiData.htmlContent}
+                        </div>
+
+                        <div class="author-box">
+                            <div class="author-avatar">
+                                <i class="fas fa-robot"></i>
+                            </div>
+                            <div class="author-info">
+                                <h4>Tech Desk Editor</h4>
+                                <p>Delivering the latest insights, news, and deep dives into the technology ecosystem to keep you informed and ahead of the curve.</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 `;
 
-                // دمج الكلمات المفتاحية الديناميكية مع تصنيف المصدر
                 const dynamicLabels = [...new Set([source.label, ...aiData.keywords])].slice(0, 5);
 
                 const auth = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET);
@@ -231,7 +289,7 @@ async function startEmpireBot() {
                 });
 
                 postedSuccessfully = true;
-                break; // نشر مقال واحد من كل قسم لتجنب السبام
+                break;
             }
 
             if (postedSuccessfully && i < SOURCES.length - 1) {
@@ -239,7 +297,7 @@ async function startEmpireBot() {
             }
 
         } catch (err) {
-            // صامت حسب طلبك
+            // صامت لتجنب إيقاف السكربت
         }
     }
 }
