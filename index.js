@@ -4,33 +4,23 @@ const { Readability } = require('@mozilla/readability');
 const cheerio = require('cheerio');
 const { google } = require('googleapis');
 const Groq = require('groq-sdk');
-const axios = require('axios');
-const sharp = require('sharp');
-const cloudinary = require('cloudinary').v2;
-const fs = require('fs');
 
-// --- مكتبات التخطي ---
+// --- مكتبات التخطي الجديدة ---
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
 // --- الإعدادات الشخصية ---
 const BLOG_ID = "2636919176960128451";
-const CLIENT_ID = "872415365656-7qribadnc7k2u21kl6jjcbatdueevifh.apps.googleusercontent.com"; 
-const CLIENT_SECRET = "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"; 
-const REFRESH_TOKEN = "1//04yti9k2agPknCgYIARAAGAQSNwF-L9IrTZPKt5Fqbg2vrM9sBtOks9cnY4M7Idg0LToQnlbYGME06k20vcyr_SVmYk1H_yZJdEc"; 
-const GROQ_API_KEY = "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"; 
-
-// --- إعدادات Cloudinary (قم بوضع بيانات حسابك هنا) ---
-cloudinary.config({ 
-  cloud_name: 'YOUR_CLOUD_NAME', 
-  api_key: 'YOUR_API_KEY', 
-  api_secret: 'YOUR_API_SECRET' 
-});
+const CLIENT_ID = "872415365656-7qribadnc7k2u21kl6jjcbatdueevifh.apps.googleusercontent.com"; // ضع الكلاينت أيدي هنا
+const CLIENT_SECRET = "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"; // ضع السيكريت هنا
+const REFRESH_TOKEN = "1//04yti9k2agPknCgYIARAAGAQSNwF-L9IrTZPKt5Fqbg2vrM9sBtOks9cnY4M7Idg0LToQnlbYGME06k20vcyr_SVmYk1H_yZJdEc"; // ضع التوكن هنا
+const GROQ_API_KEY = "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"; // ضع مفتاح Groq هنا
 
 const groq = new Groq({ apiKey: GROQ_API_KEY });
 const parser = new Parser();
 
+// --- المصادر الذكية (تم تصحيح رابط Windows Central) ---
 const SOURCES = [
     { name: "Gaming", url: "https://www.windowscentral.com/rss", label: "Gaming" },
     { name: "Android", url: "https://www.androidpolice.com/feed/", label: "Android" },
@@ -38,61 +28,51 @@ const SOURCES = [
     { name: "Reviews", url: "https://9to5google.com/feed/", label: "Reviews" },
     { name: "Tech News", url: "https://www.geeky-gadgets.com/feed/", label: "Tech" },
     { name: "AdTech", url: "https://www.exchangewire.com/feed/", label: "Business" },
+    { name: "Google Help", url: "https://news.google.com/rss/search?q=how+to+fix+android+app+problem&hl=en-US", label: "Troubleshooting" }
 ];
 
 function getRandomDelay() {
-    return Math.floor(Math.random() * (120000 - 60000 + 1)) + 60000;
+    const minMs = 1 * 60 * 1000;
+    const maxMs = 2 * 60 * 1000;
+    return Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
 }
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// --- وظيفة معالجة الصور (تحميل، ختم، ورفع) ---
-async function processAndUploadImage(imageUrl) {
-    try {
-        // 1. تحميل الصورة الأصلية
-        const response = await axios({ url: imageUrl, responseType: 'arraybuffer' });
-        let imageBuffer = Buffer.from(response.data, 'binary');
-
-        // 2. إضافة العلامة المائية (إذا كان اللوجو موجوداً)
-        if (fs.existsSync('logo.png')) {
-            const metadata = await sharp(imageBuffer).metadata();
-            // تحديد عرض اللوجو ليكون 20% من عرض الصورة الأصلية
-            const watermarkWidth = Math.floor(metadata.width * 0.20); 
-            
-            const watermarkBuffer = await sharp('logo.png')
-                .resize({ width: watermarkWidth })
-                .toBuffer();
-
-            imageBuffer = await sharp(imageBuffer)
-                .composite([{ input: watermarkBuffer, gravity: 'southeast', blend: 'over' }])
-                .webp({ quality: 80 }) // ضغط الصورة وتحويلها لـ Webp للسرعة
-                .toBuffer();
-        }
-
-        // 3. الرفع إلى Cloudinary
-        const base64Image = `data:image/webp;base64,${imageBuffer.toString('base64')}`;
-        const uploadResult = await cloudinary.uploader.upload(base64Image, {
-            folder: 'deeplexa_blog',
-        });
-
-        return uploadResult.secure_url;
-    } catch (error) {
-        console.error(`⚠️ فشل معالجة الصورة، سيتم استخدام الرابط الأصلي: ${error.message}`);
-        return imageUrl; // استخدام الرابط الأصلي في حال حدوث أي خطأ
-    }
-}
-
+// --- 1. وظيفة سحب وتنظيف المحتوى (مُحدثة بالمتصفح المخفي) ---
 async function getArticleData(url) {
     let browser;
     try {
+        // تشغيل متصفح حقيقي مخفي لتخطي حماية Cloudflare
         browser = await puppeteer.launch({
             headless: "new",
             args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
         const page = await browser.newPage();
+
+        // تعيين User-Agent حقيقي
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
 
+        // التمرير التلقائي لأسفل الصفحة لتحميل الصور المخفية (Lazy Loading)
+        await page.evaluate(async () => {
+            await new Promise((resolve) => {
+                let totalHeight = 0;
+                const distance = 100;
+                const timer = setInterval(() => {
+                    const scrollHeight = document.body.scrollHeight;
+                    window.scrollBy(0, distance);
+                    totalHeight += distance;
+                    if (totalHeight >= scrollHeight - window.innerHeight) {
+                        clearInterval(timer);
+                        resolve();
+                    }
+                }, 50);
+            });
+        });
+
+        // أخذ محتوى الصفحة بعد اكتمال التحميل
         const html = await page.content();
         await browser.close();
 
@@ -104,126 +84,139 @@ async function getArticleData(url) {
 
         const $ = cheerio.load(article.content);
         let images = [];
+        
+        // محاولة سحب الصور من المقال
         $('img').each((i, el) => {
-            let src = $(el).attr('src') || $(el).attr('data-src');
-            if (src && src.startsWith('http')) images.push(src);
+            let src = $(el).attr('src') || $(el).attr('data-src') || $(el).attr('srcset');
+            if (src && src.startsWith('http')) {
+                // إذا كان الرابط من نوع srcset، نأخذ الرابط الأول الصافي
+                images.push(src.split(' ')[0]);
+            }
         });
 
+        // حيلة إضافية: إذا لم نجد صورة، نسحب صورة الغلاف المخصصة لمواقع التواصل
         if (images.length === 0) {
             const ogImage = dom.window.document.querySelector('meta[property="og:image"]');
-            if (ogImage) images.push(ogImage.content);
+            if (ogImage && ogImage.content) {
+                images.push(ogImage.content);
+            }
         }
 
         return { 
             title: article.title, 
-            text: article.textContent.trim().slice(0, 8000), 
-            images: images.filter(img => !img.includes('avatar')), 
-            link: url,
-            excerpt: article.textContent.trim().slice(0, 160)
+            text: article.textContent.trim().slice(0, 7000), 
+            images: images.filter(img => !img.includes('avatar') && !img.includes('logo')), // فلترة اللوجوهات 
+            link: url 
         };
-    } catch (e) {
+    } catch (e) { 
+        console.log(`⚠️ فشل سحب الرابط: ${url} - السبب: ${e.message}`);
         if (browser) await browser.close();
         return null; 
     }
 }
 
-// --- وظيفة الذكاء الاصطناعي المطورة ---
+// --- 2. وظيفة الذكاء الاصطناعي (SEO Expert) ---
 async function generateSmartContent(article) {
     const prompt = `
-    You are an Expert SEO Content Writer & Schema.org Specialist. 
-    Rewrite the following article into a long-form (1000+ words) masterpiece.
+    You are an Expert SEO Content Writer. Rewrite the following text into a highly engaging, AdSense-friendly article.
     
-    OUTPUT FORMAT (MANDATORY):
-    [TITLE] Your Viral Title [/TITLE]
-    [BODY] Your HTML Content [/BODY]
-    [TAGS] Keyword1, Keyword2, Keyword3, Keyword4 [/TAGS]
+    CRITICAL RULES (FOLLOW STRICTLY):
+    1. Output ONLY pure HTML. Do NOT use markdown or backticks.
+    2. Start with an <h1> tag containing a viral, click-worthy title.
+    3. Write a strong Introduction (4-5 sentences) and naturally include the main topic keyword.
+    4. Structure the body perfectly using <h2> and <h3> tags.
+    5. Write short, easy-to-read paragraphs (Max 3 lines per <p> tag).
+    6. Use Bullet Points (<ul><li>) and numbered lists where applicable.
+    7. Include a "Frequently Asked Questions" (<h2>FAQ</h2>) section at the bottom.
+    8. Length: Be very detailed and informative. Aim for a long-form article (800-1200 words).
+    9. Language: English. Tone: Professional and exciting.
 
-    CRITICAL RULES:
-    1. FAQ Section: Use ONLY <details><summary> tags for questions. Example: <details><summary>Question?</summary><p>Answer</p></details>.
-    2. Style: Professional, informative, and high-quality.
-    3. HTML: Use <h2>, <h3>, <ul>, <li>. No markdown.
-    4. Tags: Provide 5-8 relevant SEO keywords.
-
-    Article Info:
-    Title: ${article.title}
-    Text: ${article.text}
+    Original Title: "${article.title}"
+    Content to rewrite: ${article.text}
     `;
 
     try {
+        console.log("🧠 جاري صياغة المحتوى باستخدام Llama-3.3...");
         const completion = await groq.chat.completions.create({
             messages: [{ role: "system", content: prompt }],
             model: "llama-3.3-70b-versatile",
-            temperature: 0.5 
+            temperature: 0.6 
         });
         return completion.choices[0].message.content;
-    } catch (e) { return null; }
+    } catch (e) { 
+        console.error("❌ خطأ AI:", e.message);
+        return null; 
+    }
 }
 
+// --- 3. المحرك الرئيسي للنظام ---
 async function startEmpireBot() {
-    console.log("🚀 Starting the Advanced SEO Bot 2026...");
+    console.log("🚀 Starting the SEO Empire Bot 2026...");
     
-    for (let source of SOURCES) {
+    for (let i = 0; i < SOURCES.length; i++) {
+        const source = SOURCES[i];
+        console.log(`\n========================================`);
+        console.log(`📂 جاري معالجة قسم: ${source.name} (${i + 1}/${SOURCES.length})`);
+        console.log(`========================================`);
+
         try {
-            console.log(`\n🔍 جاري فحص قسم: ${source.name}...`);
             const feed = await parser.parseURL(source.url);
-            const items = feed.items.slice(0, 5);
+            const items = feed.items.sort(() => 0.5 - Math.random()).slice(0, 7);
+            let postedSuccessfully = false;
 
             for (let item of items) {
+                console.log(`📡 فحص الخبر: ${item.title}`);
                 const data = await getArticleData(item.link);
-                if (!data || data.text.length < 600) continue;
-
-                const aiResponse = await generateSmartContent(data);
-                if (!aiResponse) continue;
-
-                // استخراج البيانات من استجابة AI
-                const viralTitle = aiResponse.match(/\[TITLE\](.*?)\[\/TITLE\]/s)?.[1].trim() || data.title;
-                const cleanAiBody = aiResponse.match(/\[BODY\](.*?)\[\/BODY\]/s)?.[1].trim();
-                const dynamicTags = aiResponse.match(/\[TAGS\](.*?)\[\/TAGS\]/s)?.[1].split(',').map(t => t.trim()) || [];
                 
-                if (!cleanAiBody) continue;
+                if (!data || data.text.length < 500) {
+                    console.log("⏭️ محتوى غير كافٍ، جاري الانتقال للخبر التالي...");
+                    continue;
+                }
 
-                // --- معالجة الصورة (Cloudinary + Sharp + SEO) ---
-                console.log(`⏳ جاري معالجة ورفع الصورة للمقال...`);
-                let rawImage = data.images[0] || "https://images.unsplash.com/photo-1518770660439-4636190af475";
-                const processedImageUrl = await processAndUploadImage(rawImage);
+                const aiRawHtml = await generateSmartContent(data);
+                if (!aiRawHtml) continue;
 
-                // --- هيكل المقال المطور للـ SEO ---
-                const finalHtml = `
-                <div class="post-container" dir="ltr">
+                let viralTitle = data.title;
+                const h1Match = aiRawHtml.match(/<h1>(.*?)<\/h1>/i);
+                if (h1Match) viralTitle = h1Match[1].replace(/<[^>]+>/g, '');
+
+                const cleanAiBody = aiRawHtml.replace(/<h1>.*?<\/h1>/i, '');
+                
+                // التأكد من وجود صورة للمقال
+                const coverImg = (data.images && data.images.length > 0) 
+                    ? data.images[0] 
+                    : "https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&q=80";
+
+                const htmlBody = `
+                <div class="main-container" dir="ltr">
                     <style>
-                        .post-container { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.7; color: #1a1a1a; }
-                        .main-img { width: 100%; height: auto; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-                        h2 { color: #d32f2f; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; margin-top: 30px; }
-                        p { margin-bottom: 20px; font-size: 18px; }
-                        
-                        /* تفاعلية الأسئلة */
-                        details { background: #f9f9f9; padding: 15px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #eee; transition: all 0.3s; }
-                        details[open] { background: #fff; border-left: 5px solid #d32f2f; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
-                        summary { font-weight: bold; cursor: pointer; list-style: none; outline: none; font-size: 19px; }
-                        summary::-webkit-details-marker { display: none; }
-                        
-                        .source-btn { display: inline-block; padding: 12px 25px; background: #222; color: #fff !important; text-decoration: none; border-radius: 50px; font-weight: bold; margin-top: 30px; }
+                        .main-container { font-family: 'Helvetica Neue', Arial, sans-serif; color: #333; line-height: 1.8; max-width: 800px; margin: 0 auto; }
+                        .hero-section { position: relative; border-radius: 20px; overflow: hidden; margin-bottom: 35px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); }
+                        .hero-section img { width: 100%; height: 450px; object-fit: cover; display: block; }
+                        .hero-overlay { position: absolute; bottom: 0; background: linear-gradient(transparent, rgba(0,0,0,0.9)); width: 100%; padding: 40px 20px 20px; color: white; }
+                        .badge { background: #ff4757; color: white; padding: 5px 12px; border-radius: 5px; font-size: 12px; font-weight: bold; text-transform: uppercase; margin-bottom: 10px; display: inline-block; }
+                        .article-body h2 { color: #2f3542; font-size: 28px; border-left: 6px solid #ff4757; padding-left: 15px; margin-top: 45px; }
+                        .article-body h3 { color: #57606f; font-size: 22px; margin-top: 30px; }
+                        .article-body p { margin-bottom: 25px; font-size: 19px; color: #444; }
+                        .article-body ul { background: #f1f2f6; padding: 25px 25px 25px 45px; border-radius: 12px; list-style-type: square; }
+                        .article-body li { margin-bottom: 12px; }
+                        .faq-box { background: #ffffff; border: 2px solid #e1e1e1; padding: 20px; border-radius: 15px; margin-top: 40px; }
+                        .source-link { display: block; text-align: center; margin-top: 40px; padding: 15px; background: #2f3542; color: white !important; text-decoration: none; border-radius: 10px; font-weight: bold; }
                     </style>
 
-                    <script type="application/ld+json">
-                    {
-                      "@context": "https://schema.org",
-                      "@type": "NewsArticle",
-                      "headline": "${viralTitle}",
-                      "image": ["${processedImageUrl}"],
-                      "datePublished": "${new Date().toISOString()}",
-                      "author": { "@type": "Person", "name": "Admin" }
-                    }
-                    </script>
+                    <div class="hero-section">
+                        <img src="${coverImg}" alt="${viralTitle}">
+                        <div class="hero-overlay">
+                            <div class="badge">${source.label}</div>
+                            <h1 style="margin:0; font-size: 28px;">${viralTitle}</h1>
+                        </div>
+                    </div>
 
-                    <!-- تم إضافة الـ Viral Title في الـ alt و الـ title للـ SEO -->
-                    <img src="${processedImageUrl}" class="main-img" alt="${viralTitle}" title="${viralTitle}">
-                    
-                    <div class="article-content">
+                    <div class="article-body">
                         ${cleanAiBody}
                     </div>
 
-                    <a href="${data.link}" class="source-btn" rel="nofollow noopener" target="_blank">View Original Research ↗</a>
+                    <a href="${data.link}" class="source-link" target="_blank" rel="nofollow">Read Full Research on Original Source ↗</a>
                 </div>
                 `;
 
@@ -235,20 +228,31 @@ async function startEmpireBot() {
                     blogId: BLOG_ID,
                     requestBody: {
                         title: viralTitle,
-                        content: finalHtml,
-                        labels: [...new Set([source.label, ...dynamicTags])].slice(0, 10)
+                        content: htmlBody,
+                        labels: [source.label, 'Trending', '2026 Tech']
                     }
                 });
 
-                console.log(`✅ تم النشر بنجاح من قسم ${source.name}: ${viralTitle}`);
-                await delay(getRandomDelay());
-                
-                // الـ Break هنا هو ما يضمن نشر مقال "واحد فقط" من كل قسم، ثم الانتقال للقسم التالي في مصفوفة SOURCES
-                break; 
+                console.log(`✅ تم النشر بنجاح: ${viralTitle}`);
+                postedSuccessfully = true;
+                break;
             }
-        } catch (err) { console.error(`❌ فشل القسم ${source.name}:`, err.message); }
+
+            if (postedSuccessfully && i < SOURCES.length - 1) {
+                const waitTime = getRandomDelay();
+                const waitMinutes = (waitTime / 130000).toFixed(2);
+                console.log(`⏳ تم النشر في قسم ${source.name}. جاري الانتظار لمدة ${waitMinutes} دقيقة قبل القسم التالي...`);
+                await delay(waitTime);
+            } else if (!postedSuccessfully) {
+                console.log(`⚠️ لم يتم العثور على مقالات صالحة في قسم ${source.name}. الانتقال للقسم التالي...`);
+            }
+
+        } catch (err) {
+            console.error(`❌ فشل في معالجة الـ RSS لقسم ${source.name}:`, err.message);
+        }
     }
-    console.log("🏁 انتهت دورة النشر بنجاح!");
+    
+    console.log("🎉 اكتملت الدورة بنجاح! تم المرور على جميع الأقسام.");
 }
 
 startEmpireBot();
