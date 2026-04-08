@@ -29,12 +29,9 @@ const SOURCES = [
     { name: "AdTech", url: "https://www.exchangewire.com/feed/", label: "Business" },
 ];
 
-function getRandomDelay() {
-    return Math.floor(Math.random() * (120000 - 60000 + 1)) + 60000;
-}
-
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// --- 1. وظيفة السحب مع مؤقت أمان 30 ثانية ---
 async function getArticleData(url) {
     let browser;
     try {
@@ -43,9 +40,12 @@ async function getArticleData(url) {
             args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
         const page = await browser.newPage();
+        
+        // حد أقصى للانتظار 30 ثانية فقط
+        await page.setDefaultNavigationTimeout(30000); 
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
-
+        
+        await page.goto(url, { waitUntil: 'domcontentloaded' });
         const html = await page.content();
         await browser.close();
 
@@ -62,44 +62,30 @@ async function getArticleData(url) {
             if (src && src.startsWith('http')) images.push(src);
         });
 
-        if (images.length === 0) {
-            const ogImage = dom.window.document.querySelector('meta[property="og:image"]');
-            if (ogImage) images.push(ogImage.content);
-        }
-
         return { 
             title: article.title, 
             text: article.textContent.trim().slice(0, 8000), 
             images: images.filter(img => !img.includes('avatar')), 
-            link: url,
-            excerpt: article.textContent.trim().slice(0, 160) // لوصف الـ SEO
+            link: url 
         };
     } catch (e) {
+        console.log(`⚠️ تخطي الرابط (بطء أو حماية): ${url}`);
         if (browser) await browser.close();
         return null; 
     }
 }
 
-// --- وظيفة الذكاء الاصطناعي المطورة ---
+// --- 2. وظيفة الذكاء الاصطناعي ---
 async function generateSmartContent(article) {
     const prompt = `
-    You are an Expert SEO Content Writer & Schema.org Specialist. 
-    Rewrite the following article into a long-form (1000+ words) masterpiece.
+    You are an Expert SEO Content Writer. Rewrite this article into a 1000+ words masterpiece.
+    Format:
+    [TITLE] Click-worthy Title [/TITLE]
+    [BODY] HTML Content (Use <h2>, <h3>, <p>, and <details><summary> for FAQ) [/BODY]
+    [TAGS] Keyword1, Keyword2, Keyword3 [/TAGS]
     
-    OUTPUT FORMAT (MANDATORY):
-    [TITLE] Your Viral Title [/TITLE]
-    [BODY] Your HTML Content [/BODY]
-    [TAGS] Keyword1, Keyword2, Keyword3, Keyword4 [/TAGS]
-
-    CRITICAL RULES:
-    1. FAQ Section: Use ONLY <details><summary> tags for questions. Example: <details><summary>Question?</summary><p>Answer</p></details>.
-    2. Style: Professional, informative, and high-quality.
-    3. HTML: Use <h2>, <h3>, <ul>, <li>. No markdown.
-    4. Tags: Provide 5-8 relevant SEO keywords.
-
-    Article Info:
-    Title: ${article.title}
-    Text: ${article.text}
+    Article Title: ${article.title}
+    Content: ${article.text}
     `;
 
     try {
@@ -109,16 +95,22 @@ async function generateSmartContent(article) {
             temperature: 0.5 
         });
         return completion.choices[0].message.content;
-    } catch (e) { return null; }
+    } catch (e) {
+        console.log("⚠️ فشل استجابة AI، سيتم التخطي.");
+        return null;
+    }
 }
 
+// --- 3. المحرك الرئيسي ---
 async function startEmpireBot() {
-    console.log("🚀 Starting the Advanced SEO Bot 2026...");
+    console.log("🚀 Starting the Secure SEO Bot 2026...");
     
     for (let source of SOURCES) {
         try {
+            console.log(`\n📂 جاري فحص قسم: ${source.name}`);
             const feed = await parser.parseURL(source.url);
-            const items = feed.items.slice(0, 5);
+            // نأخذ أول 7 روابط لضمان وجود شيء صالح للسحب
+            const items = feed.items.slice(0, 7); 
 
             for (let item of items) {
                 const data = await getArticleData(item.link);
@@ -127,31 +119,23 @@ async function startEmpireBot() {
                 const aiResponse = await generateSmartContent(data);
                 if (!aiResponse) continue;
 
-                // استخراج البيانات من استجابة AI
-                const viralTitle = aiResponse.match(/\[TITLE\](.*?)\[\/TITLE\]/s)?.[1].trim() || data.title;
-                const cleanAiBody = aiResponse.match(/\[BODY\](.*?)\[\/BODY\]/s)?.[1].trim();
-                const dynamicTags = aiResponse.match(/\[TAGS\](.*?)\[\/TAGS\]/s)?.[1].split(',').map(t => t.trim()) || [];
+                const viralTitle = aiResponse.match(/\[TITLE\](.*?)\[\/TITLE\]/s)?.[1]?.trim() || data.title;
+                const cleanAiBody = aiResponse.match(/\[BODY\](.*?)\[\/BODY\]/s)?.[1]?.trim();
+                const dynamicTags = aiResponse.match(/\[TAGS\](.*?)\[\/TAGS\]/s)?.[1]?.split(',').map(t => t.trim()) || [];
                 
                 if (!cleanAiBody) continue;
 
                 const coverImg = data.images[0] || "https://images.unsplash.com/photo-1518770660439-4636190af475";
 
-                // --- هيكل المقال المطور للـ SEO ---
                 const finalHtml = `
                 <div class="post-container" dir="ltr">
                     <style>
-                        .post-container { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.7; color: #1a1a1a; }
-                        .main-img { width: 100%; height: auto; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-                        h2 { color: #d32f2f; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; margin-top: 30px; }
-                        p { margin-bottom: 20px; font-size: 18px; }
-                        
-                        /* تفاعلية الأسئلة */
-                        details { background: #f9f9f9; padding: 15px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #eee; transition: all 0.3s; }
-                        details[open] { background: #fff; border-left: 5px solid #d32f2f; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
-                        summary { font-weight: bold; cursor: pointer; list-style: none; outline: none; font-size: 19px; }
-                        summary::-webkit-details-marker { display: none; }
-                        
-                        .source-btn { display: inline-block; padding: 12px 25px; background: #222; color: #fff !important; text-decoration: none; border-radius: 50px; font-weight: bold; margin-top: 30px; }
+                        .post-container { font-family: 'Segoe UI', sans-serif; line-height: 1.8; color: #1a1a1a; }
+                        .main-img { width: 100%; border-radius: 15px; margin-bottom: 20px; }
+                        h2 { color: #d32f2f; margin-top: 30px; border-bottom: 1px solid #eee; }
+                        details { background: #fdfdfd; padding: 15px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #eee; }
+                        summary { font-weight: bold; cursor: pointer; font-size: 18px; color: #222; }
+                        .source-btn { display: inline-block; padding: 12px 20px; background: #333; color: #fff !important; text-decoration: none; border-radius: 5px; margin-top: 20px; }
                     </style>
 
                     <script type="application/ld+json">
@@ -160,18 +144,13 @@ async function startEmpireBot() {
                       "@type": "NewsArticle",
                       "headline": "${viralTitle}",
                       "image": ["${coverImg}"],
-                      "datePublished": "${new Date().toISOString()}",
-                      "author": { "@type": "Person", "name": "Admin" }
+                      "datePublished": "${new Date().toISOString()}"
                     }
                     </script>
 
                     <img src="${coverImg}" class="main-img" alt="${viralTitle}">
-                    
-                    <div class="article-content">
-                        ${cleanAiBody}
-                    </div>
-
-                    <a href="${data.link}" class="source-btn" rel="nofollow noopener" target="_blank">View Original Research ↗</a>
+                    <div class="article-content">${cleanAiBody}</div>
+                    <a href="${data.link}" class="source-btn" rel="nofollow" target="_blank">Read Original Source ↗</a>
                 </div>
                 `;
 
@@ -184,16 +163,20 @@ async function startEmpireBot() {
                     requestBody: {
                         title: viralTitle,
                         content: finalHtml,
-                        labels: [...new Set([source.label, ...dynamicTags])].slice(0, 10) // دمج التاجات الثابتة والديناميكية
+                        labels: [...new Set([source.label, ...dynamicTags])].slice(0, 8)
                     }
                 });
 
-                console.log(`✅ تم النشر بنجاح مع تاجات ديناميكية: ${viralTitle}`);
-                await delay(getRandomDelay());
-                break; 
+                console.log(`✅成功: ${viralTitle}`);
+                await delay(20000); // انتظار قصير (20 ثانية) لتسريع العملية
+                break; // نكتفي بمقال واحد ناجح لكل قسم لضمان انتهاء المهمة بسرعة
             }
-        } catch (err) { console.error(`❌ فشل القسم ${source.name}:`, err.message); }
+        } catch (err) {
+            console.log(`❌ فشل بسيط في قسم ${source.name}، ننتقل للتالي.`);
+        }
     }
+    console.log("🏁 المهمة اكتملت بالكامل.");
+    process.exit(0); // إنهاء العملية بنجاح تام
 }
 
 startEmpireBot();
