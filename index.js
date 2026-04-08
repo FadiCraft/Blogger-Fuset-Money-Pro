@@ -31,17 +31,26 @@ const SOURCES = [
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// --- 1. وظيفة السحب مع مؤقت أمان 30 ثانية ---
+// --- 1. دالة فحص التكرار (تتأكد أن العنوان لم ينشر من قبل) ---
+async function isAlreadyPublished(blogger, blogId, title) {
+    try {
+        // نبحث في المدونة عن مقال يحمل هذا العنوان بالضبط
+        const response = await blogger.posts.search({
+            blogId: blogId,
+            q: `title:"${title}"`
+        });
+        return response.data.items && response.data.items.length > 0;
+    } catch (e) {
+        return false; // في حال تعذر البحث، نفترض أنه غير موجود لعدم توقف البوت
+    }
+}
+
+// --- 2. وظيفة سحب البيانات مع مؤقت أمان ---
 async function getArticleData(url) {
     let browser;
     try {
-        browser = await puppeteer.launch({
-            headless: "new",
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-        });
+        browser = await puppeteer.launch({ headless: "new", args: ['--no-sandbox', '--disable-setuid-sandbox'] });
         const page = await browser.newPage();
-        
-        // حد أقصى للانتظار 30 ثانية فقط
         await page.setDefaultNavigationTimeout(30000); 
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
         
@@ -54,7 +63,6 @@ async function getArticleData(url) {
         const article = reader.parse();
         
         if (!article) return null;
-
         const $ = cheerio.load(article.content);
         let images = [];
         $('img').each((i, el) => {
@@ -69,23 +77,22 @@ async function getArticleData(url) {
             link: url 
         };
     } catch (e) {
-        console.log(`⚠️ تخطي الرابط (بطء أو حماية): ${url}`);
         if (browser) await browser.close();
         return null; 
     }
 }
 
-// --- 2. وظيفة الذكاء الاصطناعي ---
+// --- 3. وظيفة الذكاء الاصطناعي لإعادة الصياغة والأسئلة ---
 async function generateSmartContent(article) {
     const prompt = `
     You are an Expert SEO Content Writer. Rewrite this article into a 1000+ words masterpiece.
     Format:
-    [TITLE] Click-worthy Title [/TITLE]
-    [BODY] HTML Content (Use <h2>, <h3>, <p>, and <details><summary> for FAQ) [/BODY]
+    [TITLE] Viral SEO Title [/TITLE]
+    [BODY] Detailed HTML Content (Use <h2>, <h3>, <p>, and <details><summary> for Interactive FAQ) [/BODY]
     [TAGS] Keyword1, Keyword2, Keyword3 [/TAGS]
     
     Article Title: ${article.title}
-    Content: ${article.text}
+    Text: ${article.text}
     `;
 
     try {
@@ -95,24 +102,33 @@ async function generateSmartContent(article) {
             temperature: 0.5 
         });
         return completion.choices[0].message.content;
-    } catch (e) {
-        console.log("⚠️ فشل استجابة AI، سيتم التخطي.");
-        return null;
-    }
+    } catch (e) { return null; }
 }
 
-// --- 3. المحرك الرئيسي ---
+// --- 4. المحرك الرئيسي الذكي ---
 async function startEmpireBot() {
-    console.log("🚀 Starting the Secure SEO Bot 2026...");
+    console.log("🚀 Starting the Smart Anti-Duplicate Bot...");
     
+    const auth = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET);
+    auth.setCredentials({ refresh_token: REFRESH_TOKEN });
+    const blogger = google.blogger({ version: 'v3', auth });
+
     for (let source of SOURCES) {
         try {
-            console.log(`\n📂 جاري فحص قسم: ${source.name}`);
+            console.log(`\n📂 Checking category: ${source.name}`);
             const feed = await parser.parseURL(source.url);
-            // نأخذ أول 7 روابط لضمان وجود شيء صالح للسحب
-            const items = feed.items.slice(0, 7); 
+            const items = feed.items.slice(0, 10); // فحص أحدث 10 أخبار
 
             for (let item of items) {
+                // الفحص الجوهري: هل نشرنا هذا الخبر من قبل؟
+                const alreadyDone = await isAlreadyPublished(blogger, BLOG_ID, item.title);
+                
+                if (alreadyDone) {
+                    console.log(`⏭️ Skipping (Already Published): ${item.title}`);
+                    continue; // اذهب للخبر التالي في الـ RSS
+                }
+
+                // إذا كان خبراً جديداً، نبدأ العمل
                 const data = await getArticleData(item.link);
                 if (!data || data.text.length < 600) continue;
 
@@ -131,32 +147,20 @@ async function startEmpireBot() {
                 <div class="post-container" dir="ltr">
                     <style>
                         .post-container { font-family: 'Segoe UI', sans-serif; line-height: 1.8; color: #1a1a1a; }
-                        .main-img { width: 100%; border-radius: 15px; margin-bottom: 20px; }
-                        h2 { color: #d32f2f; margin-top: 30px; border-bottom: 1px solid #eee; }
-                        details { background: #fdfdfd; padding: 15px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #eee; }
-                        summary { font-weight: bold; cursor: pointer; font-size: 18px; color: #222; }
-                        .source-btn { display: inline-block; padding: 12px 20px; background: #333; color: #fff !important; text-decoration: none; border-radius: 5px; margin-top: 20px; }
+                        .main-img { width: 100%; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+                        h2 { color: #d32f2f; margin-top: 30px; border-bottom: 2px solid #eee; padding-bottom: 5px; }
+                        details { background: #f9f9f9; padding: 15px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #ddd; cursor: pointer; }
+                        summary { font-weight: bold; font-size: 19px; }
+                        .source-btn { display: inline-block; padding: 12px 20px; background: #222; color: #fff !important; text-decoration: none; border-radius: 5px; margin-top: 25px; font-weight: bold; }
                     </style>
-
                     <script type="application/ld+json">
-                    {
-                      "@context": "https://schema.org",
-                      "@type": "NewsArticle",
-                      "headline": "${viralTitle}",
-                      "image": ["${coverImg}"],
-                      "datePublished": "${new Date().toISOString()}"
-                    }
+                    { "@context": "https://schema.org", "@type": "NewsArticle", "headline": "${viralTitle}", "image": ["${coverImg}"], "datePublished": "${new Date().toISOString()}" }
                     </script>
-
                     <img src="${coverImg}" class="main-img" alt="${viralTitle}">
                     <div class="article-content">${cleanAiBody}</div>
-                    <a href="${data.link}" class="source-btn" rel="nofollow" target="_blank">Read Original Source ↗</a>
+                    <a href="${data.link}" class="source-btn" rel="nofollow" target="_blank">Read Full Original Article ↗</a>
                 </div>
                 `;
-
-                const auth = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET);
-                auth.setCredentials({ refresh_token: REFRESH_TOKEN });
-                const blogger = google.blogger({ version: 'v3', auth });
 
                 await blogger.posts.insert({
                     blogId: BLOG_ID,
@@ -167,16 +171,15 @@ async function startEmpireBot() {
                     }
                 });
 
-                console.log(`✅成功: ${viralTitle}`);
-                await delay(20000); // انتظار قصير (20 ثانية) لتسريع العملية
-                break; // نكتفي بمقال واحد ناجح لكل قسم لضمان انتهاء المهمة بسرعة
+                console.log(`✅ Successfully Published New Article: ${viralTitle}`);
+                await delay(15000); 
+                break; // انتقل للقسم التالي بعد نشر مقال واحد جديد
             }
         } catch (err) {
-            console.log(`❌ فشل بسيط في قسم ${source.name}، ننتقل للتالي.`);
+            console.log(`❌ Error in category ${source.name}: ${err.message}`);
         }
     }
-    console.log("🏁 المهمة اكتملت بالكامل.");
-    process.exit(0); // إنهاء العملية بنجاح تام
+    process.exit(0);
 }
 
 startEmpireBot();
