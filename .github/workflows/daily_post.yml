@@ -2,7 +2,7 @@ name: Google News Blogger Bot
 
 on:
   schedule:
-    - cron: '0 */5 * * *' # ينشر خبر كل 1 ساعات لتواكب التريند
+    - cron: '0 */4 * * *' # غيرتها لـ 4 ساعات بناءً على طلبك الأخير
   workflow_dispatch:
 
 jobs:
@@ -19,8 +19,9 @@ jobs:
 
       - name: Install Dependencies
         run: |
+          # تثبيت كل المكتبات الضرورية للـ SEO Empire Bot
           npm install --force
-          npm install puppeteer puppeteer-extra puppeteer-extra-plugin-stealth
+          npm install sharp axios rss-parser jsdom @mozilla/readability cheerio googleapis groq-sdk puppeteer puppeteer-extra puppeteer-extra-plugin-stealth
 
       - name: Execution
         run: node index.js
