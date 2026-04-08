@@ -4,23 +4,19 @@ const { Readability } = require('@mozilla/readability');
 const cheerio = require('cheerio');
 const { google } = require('googleapis');
 const Groq = require('groq-sdk');
-
-// --- مكتبات التخطي الجديدة ---
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
-// --- الإعدادات الشخصية ---
-const BLOG_ID = "2636919176960128451";
-const CLIENT_ID = "872415365656-7qribadnc7k2u21kl6jjcbatdueevifh.apps.googleusercontent.com"; // ضع الكلاينت أيدي هنا
-const CLIENT_SECRET = "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"; // ضع السيكريت هنا
-const REFRESH_TOKEN = "1//04yti9k2agPknCgYIARAAGAQSNwF-L9IrTZPKt5Fqbg2vrM9sBtOks9cnY4M7Idg0LToQnlbYGME06k20vcyr_SVmYk1H_yZJdEc"; // ضع التوكن هنا
-const GROQ_API_KEY = "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"; // ضع مفتاح Groq هنا
+const BLOG_ID = process.env.BLOG_ID || "2636919176960128451";
+const CLIENT_ID = process.env.CLIENT_ID || "872415365656-7qribadnc7k2u21kl6jjcbatdueevifh.apps.googleusercontent.com"; 
+const CLIENT_SECRET = process.env.CLIENT_SECRET || "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"; 
+const REFRESH_TOKEN = process.env.REFRESH_TOKEN || "1//04yti9k2agPknCgYIARAAGAQSNwF-L9IrTZPKt5Fqbg2vrM9sBtOks9cnY4M7Idg0LToQnlbYGME06k20vcyr_SVmYk1H_yZJdEc"; 
+const GROQ_API_KEY = process.env.GROQ_API_KEY || "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"; 
 
 const groq = new Groq({ apiKey: GROQ_API_KEY });
 const parser = new Parser();
 
-// --- المصادر الذكية (تم تصحيح رابط Windows Central) ---
 const SOURCES = [
     { name: "Gaming", url: "https://www.windowscentral.com/rss", label: "Gaming" },
     { name: "Android", url: "https://www.androidpolice.com/feed/", label: "Android" },
@@ -39,23 +35,17 @@ function getRandomDelay() {
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// --- 1. وظيفة سحب وتنظيف المحتوى (مُحدثة بالمتصفح المخفي) ---
 async function getArticleData(url) {
     let browser;
     try {
-        // تشغيل متصفح حقيقي مخفي لتخطي حماية Cloudflare
         browser = await puppeteer.launch({
             headless: "new",
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
         });
         const page = await browser.newPage();
-
-        // تعيين User-Agent حقيقي
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
 
-        // التمرير التلقائي لأسفل الصفحة لتحميل الصور المخفية (Lazy Loading)
         await page.evaluate(async () => {
             await new Promise((resolve) => {
                 let totalHeight = 0;
@@ -72,7 +62,6 @@ async function getArticleData(url) {
             });
         });
 
-        // أخذ محتوى الصفحة بعد اكتمال التحميل
         const html = await page.content();
         await browser.close();
 
@@ -85,140 +74,147 @@ async function getArticleData(url) {
         const $ = cheerio.load(article.content);
         let images = [];
         
-        // محاولة سحب الصور من المقال
         $('img').each((i, el) => {
             let src = $(el).attr('src') || $(el).attr('data-src') || $(el).attr('srcset');
             if (src && src.startsWith('http')) {
-                // إذا كان الرابط من نوع srcset، نأخذ الرابط الأول الصافي
                 images.push(src.split(' ')[0]);
             }
         });
 
-        // حيلة إضافية: إذا لم نجد صورة، نسحب صورة الغلاف المخصصة لمواقع التواصل
         if (images.length === 0) {
             const ogImage = dom.window.document.querySelector('meta[property="og:image"]');
-            if (ogImage && ogImage.content) {
-                images.push(ogImage.content);
-            }
+            if (ogImage && ogImage.content) images.push(ogImage.content);
         }
 
         return { 
             title: article.title, 
             text: article.textContent.trim().slice(0, 7000), 
-            images: images.filter(img => !img.includes('avatar') && !img.includes('logo')), // فلترة اللوجوهات 
+            images: images.filter(img => !img.includes('avatar') && !img.includes('logo')), 
             link: url 
         };
     } catch (e) { 
-        console.log(`⚠️ فشل سحب الرابط: ${url} - السبب: ${e.message}`);
         if (browser) await browser.close();
         return null; 
     }
 }
 
-// --- 2. وظيفة الذكاء الاصطناعي (SEO Expert) ---
 async function generateSmartContent(article) {
     const prompt = `
-    You are an Expert SEO Content Writer. Rewrite the following text into a highly engaging, AdSense-friendly article.
+    You are an Elite SEO Expert and Copywriter. Analyze the article and rewrite it to be 100% unique, highly engaging, and perfectly optimized for AdSense and Google Search. 
     
-    CRITICAL RULES (FOLLOW STRICTLY):
-    1. Output ONLY pure HTML. Do NOT use markdown or backticks.
-    2. Start with an <h1> tag containing a viral, click-worthy title.
-    3. Write a strong Introduction (4-5 sentences) and naturally include the main topic keyword.
-    4. Structure the body perfectly using <h2> and <h3> tags.
-    5. Write short, easy-to-read paragraphs (Max 3 lines per <p> tag).
-    6. Use Bullet Points (<ul><li>) and numbered lists where applicable.
-    7. Include a "Frequently Asked Questions" (<h2>FAQ</h2>) section at the bottom.
-    8. Length: Be very detailed and informative. Aim for a long-form article (800-1200 words).
-    9. Language: English. Tone: Professional and exciting.
+    You MUST output strictly in JSON format. Do not add any text outside the JSON block.
+    
+    {
+        "seoTitle": "A click-worthy, highly viral, and SEO-optimized title (Max 60 chars)",
+        "metaDescription": "A compelling meta description containing the main keyword (Max 150 chars)",
+        "keywords": ["Keyword1", "Keyword2", "Keyword3", "Keyword4", "Keyword5"], 
+        "htmlContent": "The entire rewritten HTML article body"
+    }
+
+    RULES FOR 'htmlContent':
+    1. Structure: Start with a captivating introduction paragraph. Use <h2> and <h3> tags for all subheadings.
+    2. AdSense Friendly: Use short paragraphs (2-3 sentences max) to allow ad insertions naturally.
+    3. LSI Keywords: Naturally bold (<strong>) 4-6 important LSI keywords throughout the text.
+    4. Lists: Include at least one bulleted list (<ul><li>) or numbered list.
+    5. Table of Contents: Create a short <div class='toc'><ul>...</ul></div> at the top.
+    6. FAQ Section: End the article with an '<h2>Frequently Asked Questions (FAQ)</h2>' containing 3 relevant questions and answers.
+    7. Language: English. Tone: Professional, informative, and engaging. DO NOT output the <h1> tag in the htmlContent.
 
     Original Title: "${article.title}"
     Content to rewrite: ${article.text}
     `;
 
     try {
-        console.log("🧠 جاري صياغة المحتوى باستخدام Llama-3.3...");
         const completion = await groq.chat.completions.create({
-            messages: [{ role: "system", content: prompt }],
+            messages: [{ role: "user", content: prompt }],
             model: "llama-3.3-70b-versatile",
-            temperature: 0.6 
+            temperature: 0.5,
+            response_format: { type: "json_object" }
         });
-        return completion.choices[0].message.content;
+        return JSON.parse(completion.choices[0].message.content);
     } catch (e) { 
-        console.error("❌ خطأ AI:", e.message);
         return null; 
     }
 }
 
-// --- 3. المحرك الرئيسي للنظام ---
 async function startEmpireBot() {
-    console.log("🚀 Starting the SEO Empire Bot 2026...");
-    
     for (let i = 0; i < SOURCES.length; i++) {
         const source = SOURCES[i];
-        console.log(`\n========================================`);
-        console.log(`📂 جاري معالجة قسم: ${source.name} (${i + 1}/${SOURCES.length})`);
-        console.log(`========================================`);
-
         try {
             const feed = await parser.parseURL(source.url);
-            const items = feed.items.sort(() => 0.5 - Math.random()).slice(0, 7);
+            const items = feed.items.sort(() => 0.5 - Math.random()).slice(0, 5);
             let postedSuccessfully = false;
 
             for (let item of items) {
-                console.log(`📡 فحص الخبر: ${item.title}`);
                 const data = await getArticleData(item.link);
-                
-                if (!data || data.text.length < 500) {
-                    console.log("⏭️ محتوى غير كافٍ، جاري الانتقال للخبر التالي...");
-                    continue;
-                }
+                if (!data || data.text.length < 500) continue;
 
-                const aiRawHtml = await generateSmartContent(data);
-                if (!aiRawHtml) continue;
+                const aiData = await generateSmartContent(data);
+                if (!aiData || !aiData.htmlContent) continue;
 
-                let viralTitle = data.title;
-                const h1Match = aiRawHtml.match(/<h1>(.*?)<\/h1>/i);
-                if (h1Match) viralTitle = h1Match[1].replace(/<[^>]+>/g, '');
-
-                const cleanAiBody = aiRawHtml.replace(/<h1>.*?<\/h1>/i, '');
-                
-                // التأكد من وجود صورة للمقال
                 const coverImg = (data.images && data.images.length > 0) 
                     ? data.images[0] 
                     : "https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&q=80";
 
+                // Schema Markup for SEO
+                const schemaJSON = {
+                    "@context": "https://schema.org",
+                    "@type": "NewsArticle",
+                    "headline": aiData.seoTitle,
+                    "image": [coverImg],
+                    "datePublished": new Date().toISOString(),
+                    "description": aiData.metaDescription,
+                    "author": { "@type": "Organization", "name": "Tech Insights" }
+                };
+
                 const htmlBody = `
+                <script type="application/ld+json">
+                ${JSON.stringify(schemaJSON)}
+                </script>
+                
                 <div class="main-container" dir="ltr">
                     <style>
-                        .main-container { font-family: 'Helvetica Neue', Arial, sans-serif; color: #333; line-height: 1.8; max-width: 800px; margin: 0 auto; }
-                        .hero-section { position: relative; border-radius: 20px; overflow: hidden; margin-bottom: 35px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); }
-                        .hero-section img { width: 100%; height: 450px; object-fit: cover; display: block; }
-                        .hero-overlay { position: absolute; bottom: 0; background: linear-gradient(transparent, rgba(0,0,0,0.9)); width: 100%; padding: 40px 20px 20px; color: white; }
-                        .badge { background: #ff4757; color: white; padding: 5px 12px; border-radius: 5px; font-size: 12px; font-weight: bold; text-transform: uppercase; margin-bottom: 10px; display: inline-block; }
-                        .article-body h2 { color: #2f3542; font-size: 28px; border-left: 6px solid #ff4757; padding-left: 15px; margin-top: 45px; }
-                        .article-body h3 { color: #57606f; font-size: 22px; margin-top: 30px; }
-                        .article-body p { margin-bottom: 25px; font-size: 19px; color: #444; }
-                        .article-body ul { background: #f1f2f6; padding: 25px 25px 25px 45px; border-radius: 12px; list-style-type: square; }
-                        .article-body li { margin-bottom: 12px; }
-                        .faq-box { background: #ffffff; border: 2px solid #e1e1e1; padding: 20px; border-radius: 15px; margin-top: 40px; }
-                        .source-link { display: block; text-align: center; margin-top: 40px; padding: 15px; background: #2f3542; color: white !important; text-decoration: none; border-radius: 10px; font-weight: bold; }
+                        .main-container { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #202124; line-height: 1.8; max-width: 850px; margin: 0 auto; padding: 10px; }
+                        .hero-section { position: relative; border-radius: 16px; overflow: hidden; margin-bottom: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+                        .hero-section img { width: 100%; height: auto; max-height: 500px; object-fit: cover; display: block; }
+                        .hero-overlay { position: absolute; bottom: 0; background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%); width: 100%; padding: 40px 25px 20px; color: white; box-sizing: border-box;}
+                        .badge { background: #1a73e8; color: white; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; text-transform: uppercase; margin-bottom: 15px; display: inline-block; letter-spacing: 0.5px; }
+                        .hero-overlay h1 { margin:0; font-size: 32px; font-weight: 700; line-height: 1.3; text-shadow: 1px 1px 3px rgba(0,0,0,0.5); }
+                        .toc { background: #f8f9fa; border: 1px solid #e8eaed; border-radius: 8px; padding: 20px; margin-bottom: 30px; }
+                        .toc ul { list-style: none; padding-left: 0; margin: 0; }
+                        .toc li { margin-bottom: 10px; border-bottom: 1px solid #e8eaed; padding-bottom: 5px; }
+                        .toc li::before { content: "🎯 "; }
+                        .article-body h2 { color: #1a73e8; font-size: 26px; border-bottom: 2px solid #e8eaed; padding-bottom: 10px; margin-top: 40px; margin-bottom: 20px; font-weight: 600;}
+                        .article-body h3 { color: #3c4043; font-size: 22px; margin-top: 30px; font-weight: 600;}
+                        .article-body p { margin-bottom: 20px; font-size: 18px; color: #4a4d51; letter-spacing: 0.2px; }
+                        .article-body strong { color: #202124; background: #fff3e0; padding: 0 4px; border-radius: 3px; }
+                        .article-body ul, .article-body ol { background: #f8f9fa; padding: 20px 20px 20px 40px; border-radius: 8px; border-left: 4px solid #1a73e8; margin-bottom: 25px;}
+                        .article-body li { margin-bottom: 10px; font-size: 18px; color: #4a4d51; }
+                        .source-link { display: inline-block; text-align: center; margin-top: 40px; padding: 14px 28px; background: #1a73e8; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 600; transition: background 0.3s; box-shadow: 0 2px 6px rgba(26,115,232,0.4); }
+                        .source-link:hover { background: #1557b0; }
+                        @media (max-width: 600px) { .hero-overlay h1 { font-size: 24px; } .article-body h2 { font-size: 22px; } .article-body p { font-size: 16px; } }
                     </style>
 
                     <div class="hero-section">
-                        <img src="${coverImg}" alt="${viralTitle}">
+                        <img src="${coverImg}" alt="${aiData.seoTitle}">
                         <div class="hero-overlay">
                             <div class="badge">${source.label}</div>
-                            <h1 style="margin:0; font-size: 28px;">${viralTitle}</h1>
+                            <h1>${aiData.seoTitle}</h1>
                         </div>
                     </div>
 
                     <div class="article-body">
-                        ${cleanAiBody}
+                        ${aiData.htmlContent}
                     </div>
 
-                    <a href="${data.link}" class="source-link" target="_blank" rel="nofollow">Read Full Research on Original Source ↗</a>
+                    <div style="text-align: center;">
+                        <a href="${data.link}" class="source-link" target="_blank" rel="nofollow noopener noreferrer">View Original Source ↗</a>
+                    </div>
                 </div>
                 `;
+
+                // دمج الكلمات المفتاحية الديناميكية مع تصنيف المصدر
+                const dynamicLabels = [...new Set([source.label, ...aiData.keywords])].slice(0, 5);
 
                 const auth = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET);
                 auth.setCredentials({ refresh_token: REFRESH_TOKEN });
@@ -227,32 +223,25 @@ async function startEmpireBot() {
                 await blogger.posts.insert({
                     blogId: BLOG_ID,
                     requestBody: {
-                        title: viralTitle,
+                        title: aiData.seoTitle,
                         content: htmlBody,
-                        labels: [source.label, 'Trending', '2026 Tech']
+                        labels: dynamicLabels,
+                        customMetaData: aiData.metaDescription
                     }
                 });
 
-                console.log(`✅ تم النشر بنجاح: ${viralTitle}`);
                 postedSuccessfully = true;
-                break;
+                break; // نشر مقال واحد من كل قسم لتجنب السبام
             }
 
             if (postedSuccessfully && i < SOURCES.length - 1) {
-                const waitTime = getRandomDelay();
-                const waitMinutes = (waitTime / 130000).toFixed(2);
-                console.log(`⏳ تم النشر في قسم ${source.name}. جاري الانتظار لمدة ${waitMinutes} دقيقة قبل القسم التالي...`);
-                await delay(waitTime);
-            } else if (!postedSuccessfully) {
-                console.log(`⚠️ لم يتم العثور على مقالات صالحة في قسم ${source.name}. الانتقال للقسم التالي...`);
+                await delay(getRandomDelay());
             }
 
         } catch (err) {
-            console.error(`❌ فشل في معالجة الـ RSS لقسم ${source.name}:`, err.message);
+            // صامت حسب طلبك
         }
     }
-    
-    console.log("🎉 اكتملت الدورة بنجاح! تم المرور على جميع الأقسام.");
 }
 
 startEmpireBot();
