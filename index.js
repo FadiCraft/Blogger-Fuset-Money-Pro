@@ -4,6 +4,10 @@ const { Readability } = require('@mozilla/readability');
 const cheerio = require('cheerio');
 const { google } = require('googleapis');
 const Groq = require('groq-sdk');
+const axios = require('axios');
+const sharp = require('sharp');
+const cloudinary = require('cloudinary').v2;
+const fs = require('fs');
 
 // --- مكتبات التخطي ---
 const puppeteer = require('puppeteer-extra');
@@ -16,6 +20,13 @@ const CLIENT_ID = "872415365656-7qribadnc7k2u21kl6jjcbatdueevifh.apps.googleuser
 const CLIENT_SECRET = "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"; 
 const REFRESH_TOKEN = "1//04yti9k2agPknCgYIARAAGAQSNwF-L9IrTZPKt5Fqbg2vrM9sBtOks9cnY4M7Idg0LToQnlbYGME06k20vcyr_SVmYk1H_yZJdEc"; 
 const GROQ_API_KEY = "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"; 
+
+// --- إعدادات Cloudinary (قم بوضع بيانات حسابك هنا) ---
+cloudinary.config({ 
+  cloud_name: 'YOUR_CLOUD_NAME', 
+  api_key: 'YOUR_API_KEY', 
+  api_secret: 'YOUR_API_SECRET' 
+});
 
 const groq = new Groq({ apiKey: GROQ_API_KEY });
 const parser = new Parser();
@@ -34,6 +45,42 @@ function getRandomDelay() {
 }
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// --- وظيفة معالجة الصور (تحميل، ختم، ورفع) ---
+async function processAndUploadImage(imageUrl) {
+    try {
+        // 1. تحميل الصورة الأصلية
+        const response = await axios({ url: imageUrl, responseType: 'arraybuffer' });
+        let imageBuffer = Buffer.from(response.data, 'binary');
+
+        // 2. إضافة العلامة المائية (إذا كان اللوجو موجوداً)
+        if (fs.existsSync('logo.png')) {
+            const metadata = await sharp(imageBuffer).metadata();
+            // تحديد عرض اللوجو ليكون 20% من عرض الصورة الأصلية
+            const watermarkWidth = Math.floor(metadata.width * 0.20); 
+            
+            const watermarkBuffer = await sharp('logo.png')
+                .resize({ width: watermarkWidth })
+                .toBuffer();
+
+            imageBuffer = await sharp(imageBuffer)
+                .composite([{ input: watermarkBuffer, gravity: 'southeast', blend: 'over' }])
+                .webp({ quality: 80 }) // ضغط الصورة وتحويلها لـ Webp للسرعة
+                .toBuffer();
+        }
+
+        // 3. الرفع إلى Cloudinary
+        const base64Image = `data:image/webp;base64,${imageBuffer.toString('base64')}`;
+        const uploadResult = await cloudinary.uploader.upload(base64Image, {
+            folder: 'deeplexa_blog',
+        });
+
+        return uploadResult.secure_url;
+    } catch (error) {
+        console.error(`⚠️ فشل معالجة الصورة، سيتم استخدام الرابط الأصلي: ${error.message}`);
+        return imageUrl; // استخدام الرابط الأصلي في حال حدوث أي خطأ
+    }
+}
 
 async function getArticleData(url) {
     let browser;
@@ -72,7 +119,7 @@ async function getArticleData(url) {
             text: article.textContent.trim().slice(0, 8000), 
             images: images.filter(img => !img.includes('avatar')), 
             link: url,
-            excerpt: article.textContent.trim().slice(0, 160) // لوصف الـ SEO
+            excerpt: article.textContent.trim().slice(0, 160)
         };
     } catch (e) {
         if (browser) await browser.close();
@@ -117,6 +164,7 @@ async function startEmpireBot() {
     
     for (let source of SOURCES) {
         try {
+            console.log(`\n🔍 جاري فحص قسم: ${source.name}...`);
             const feed = await parser.parseURL(source.url);
             const items = feed.items.slice(0, 5);
 
@@ -134,7 +182,10 @@ async function startEmpireBot() {
                 
                 if (!cleanAiBody) continue;
 
-                const coverImg = data.images[0] || "https://images.unsplash.com/photo-1518770660439-4636190af475";
+                // --- معالجة الصورة (Cloudinary + Sharp + SEO) ---
+                console.log(`⏳ جاري معالجة ورفع الصورة للمقال...`);
+                let rawImage = data.images[0] || "https://images.unsplash.com/photo-1518770660439-4636190af475";
+                const processedImageUrl = await processAndUploadImage(rawImage);
 
                 // --- هيكل المقال المطور للـ SEO ---
                 const finalHtml = `
@@ -159,13 +210,14 @@ async function startEmpireBot() {
                       "@context": "https://schema.org",
                       "@type": "NewsArticle",
                       "headline": "${viralTitle}",
-                      "image": ["${coverImg}"],
+                      "image": ["${processedImageUrl}"],
                       "datePublished": "${new Date().toISOString()}",
                       "author": { "@type": "Person", "name": "Admin" }
                     }
                     </script>
 
-                    <img src="${coverImg}" class="main-img" alt="${viralTitle}">
+                    <!-- تم إضافة الـ Viral Title في الـ alt و الـ title للـ SEO -->
+                    <img src="${processedImageUrl}" class="main-img" alt="${viralTitle}" title="${viralTitle}">
                     
                     <div class="article-content">
                         ${cleanAiBody}
@@ -184,16 +236,19 @@ async function startEmpireBot() {
                     requestBody: {
                         title: viralTitle,
                         content: finalHtml,
-                        labels: [...new Set([source.label, ...dynamicTags])].slice(0, 10) // دمج التاجات الثابتة والديناميكية
+                        labels: [...new Set([source.label, ...dynamicTags])].slice(0, 10)
                     }
                 });
 
-                console.log(`✅ تم النشر بنجاح مع تاجات ديناميكية: ${viralTitle}`);
+                console.log(`✅ تم النشر بنجاح من قسم ${source.name}: ${viralTitle}`);
                 await delay(getRandomDelay());
+                
+                // الـ Break هنا هو ما يضمن نشر مقال "واحد فقط" من كل قسم، ثم الانتقال للقسم التالي في مصفوفة SOURCES
                 break; 
             }
         } catch (err) { console.error(`❌ فشل القسم ${source.name}:`, err.message); }
     }
+    console.log("🏁 انتهت دورة النشر بنجاح!");
 }
 
 startEmpireBot();
