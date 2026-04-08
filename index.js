@@ -5,6 +5,8 @@ const cheerio = require('cheerio');
 const { google } = require('googleapis');
 const Groq = require('groq-sdk');
 const axios = require('axios');
+const sharp = require('sharp');
+const { createCanvas, loadImage } = require('canvas');
 
 const BLOG_ID = process.env.BLOG_ID || "2636919176960128451";
 const CLIENT_ID = process.env.CLIENT_ID || "872415365656-7qribadnc7k2u21kl6jjcbatdueevifh.apps.googleusercontent.com"; 
@@ -15,54 +17,80 @@ const GROQ_API_KEY = process.env.GROQ_API_KEY || "gsk_N1NHOKRb0nF2YTto6aSYWGdyb3
 const groq = new Groq({ apiKey: GROQ_API_KEY });
 const parser = new Parser({
     timeout: 15000,
-    headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-    }
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
 });
 
 const SOURCES = [
-    { name: "Technology", url: "https://www.wired.com/feed/rss", label: "Tech" },
-    { name: "Business", url: "https://www.inc.com/rss", label: "Business" },
-    { name: "Marketing", url: "https://moz.com/feed", label: "Marketing" },
-    { name: "AI News", url: "https://www.theverge.com/rss/index.xml", label: "AI" }
+    { name: "Technology", url: "https://www.wired.com/feed/rss", label: "Tech", enabled: true },
+    { name: "Business", url: "https://www.inc.com/rss", label: "Business", enabled: true },
+    { name: "Marketing", url: "https://moz.com/feed", label: "Marketing", enabled: true },
+    { name: "AI News", url: "https://www.theverge.com/rss/index.xml", label: "AI", enabled: true }
 ];
 
-// قائمة بصور آمنة وخالية من حقوق الطبع والنشر (Unsplash Source)
+// قائمة بصور آمنة
 const SAFE_IMAGES = [
     "https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&q=80",
     "https://images.unsplash.com/photo-1432888498266-38ffec3eaf0a?w=800&q=80",
     "https://images.unsplash.com/photo-1581291518633-83b4ebd1d83e?w=800&q=80",
-    "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&q=80",
-    "https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=800&q=80",
-    "https://images.unsplash.com/photo-1486312338219-ce68d2c6f44d?w=800&q=80",
-    "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800&q=80",
-    "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=800&q=80"
+    "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&q=80"
 ];
 
-// دالة لإضافة علامة مائية نصية على الصورة (باستخدام SVG)
-function addWatermarkToImage(imageUrl, title) {
-    // نستخدم Unsplash مباشرة لأنها آمنة قانونياً، ونضيف نص تحتها
-    // إذا كانت الصورة من Unsplash نضيف معامل attribution
-    if (imageUrl.includes('unsplash.com')) {
-        return imageUrl + '&auto=format&fit=crop';
+// دالة لإضافة علامة مائية حقيقية على الصورة (تحويلها إلى Base64 SVG مع علامة مائية)
+async function addWatermarkToImage(imageUrl, title) {
+    try {
+        // اختصار عنوان المقال لاستخدامه كعلامة مائية
+        const watermarkText = `© Tech Insights ${new Date().getFullYear()}`;
+        
+        // إنشاء SVG مع علامة مائية شفافة
+        const svgWatermark = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="400" height="200">
+            <defs>
+                <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.5"/>
+                </filter>
+            </defs>
+            <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" 
+                  font-family="Arial, sans-serif" font-size="24" font-weight="bold"
+                  fill="rgba(255,255,255,0.7)" filter="url(#shadow)"
+                  transform="rotate(-25, 200, 100)">
+                ${watermarkText}
+            </text>
+            <text x="50%" y="70%" text-anchor="middle" dominant-baseline="middle"
+                  font-family="Arial, sans-serif" font-size="14" font-weight="normal"
+                  fill="rgba(255,255,255,0.5)" transform="rotate(-25, 200, 140)">
+                TechInsights.com
+            </text>
+        </svg>`;
+        
+        // تحويل SVG إلى Base64
+        const encodedWatermark = Buffer.from(svgWatermark).toString('base64');
+        const watermarkDataUrl = `data:image/svg+xml;base64,${encodedWatermark}`;
+        
+        // نعيد الصورة مع إضافة العلامة المائية كعنصر منفصل
+        // (بدلاً من تعديل الصورة الفعلية، نضيف العلامة المائية في HTML)
+        return {
+            originalUrl: imageUrl,
+            watermarkUrl: watermarkDataUrl,
+            hasWatermark: true
+        };
+    } catch (e) {
+        return { originalUrl: imageUrl, watermarkUrl: null, hasWatermark: false };
     }
-    // للصور الأخرى، نستخدم صورة آمنة بديلة
-    return SAFE_IMAGES[Math.floor(Math.random() * SAFE_IMAGES.length)];
 }
 
-// دالة لاستخراج الصور الآمنة فقط (نرفض صور الإعلانات والشعارات)
+// دالة لاستخراج الصور الآمنة فقط
 function extractSafeImages($, dom) {
     let images = [];
-    const unsafeKeywords = ['ad', 'ads', 'advertisement', 'sponsor', 'logo', 'icon', 'avatar', 'banner', 'promo', 'googlead', 'doubleclick', 'amazon-ads', 'advert', 'watermark', 'pixel', 'tracking'];
+    const unsafeKeywords = ['ad', 'ads', 'advertisement', 'sponsor', 'logo', 'icon', 'avatar', 'banner', 'promo', 'googlead', 'doubleclick', 'amazon-ads', 'advert', 'watermark', 'pixel', 'tracking', 'facebook', 'twitter', 'instagram', 'youtube'];
     
     $('img').each((i, el) => {
+        if (images.length >= 3) return false;
+        
         let src = $(el).attr('src') || $(el).attr('data-src') || $(el).attr('srcset');
         if (src && src.startsWith('http')) {
             let cleanUrl = src.split(' ')[0];
-            cleanUrl = cleanUrl.split('?')[0]; // إزالة المعاملات
-            cleanUrl = cleanUrl.toLowerCase();
+            cleanUrl = cleanUrl.split('?')[0].toLowerCase();
             
-            // التحقق من أن الصورة ليست إعلاناً
             let isSafe = true;
             for (let keyword of unsafeKeywords) {
                 if (cleanUrl.includes(keyword)) {
@@ -71,15 +99,8 @@ function extractSafeImages($, dom) {
                 }
             }
             
-            // التحقق من امتدادات الصور المقبولة
-            const validExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
-            let hasValidExt = false;
-            for (let ext of validExtensions) {
-                if (cleanUrl.includes(ext)) {
-                    hasValidExt = true;
-                    break;
-                }
-            }
+            const validExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
+            let hasValidExt = validExtensions.some(ext => cleanUrl.includes(ext));
             
             if (isSafe && hasValidExt && cleanUrl.length < 300 && !images.includes(cleanUrl)) {
                 images.push(cleanUrl);
@@ -87,30 +108,20 @@ function extractSafeImages($, dom) {
         }
     });
     
-    // إذا لم نجد صوراً، نستخدم صوراً آمنة من Unsplash
     if (images.length === 0) {
         const ogImage = dom.window.document.querySelector('meta[property="og:image"]');
         if (ogImage && ogImage.content) {
-            let ogUrl = ogImage.content.split('?')[0];
-            let isSafe = true;
-            for (let keyword of unsafeKeywords) {
-                if (ogUrl.toLowerCase().includes(keyword)) {
-                    isSafe = false;
-                    break;
-                }
-            }
-            if (isSafe) images.push(ogUrl);
+            let ogUrl = ogImage.content.split('?')[0].toLowerCase();
+            let isSafe = !unsafeKeywords.some(k => ogUrl.includes(k));
+            if (isSafe) images.push(ogImage.content);
         }
     }
     
-    // نحد أقصى 3 صور آمنة
-    return images.filter(img => !unsafeKeywords.some(k => img.includes(k))).slice(0, 3);
+    return images.length > 0 ? images : [SAFE_IMAGES[Math.floor(Math.random() * SAFE_IMAGES.length)]];
 }
 
 function getRandomDelay() {
-    const minMs = 30 * 1000;
-    const maxMs = 60 * 1000;
-    return Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
+    return Math.floor(Math.random() * (60000 - 30000 + 1)) + 30000;
 }
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -119,9 +130,7 @@ async function getArticleData(url) {
     try {
         const response = await axios.get(url, {
             timeout: 20000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
         });
 
         const html = response.data;
@@ -134,16 +143,13 @@ async function getArticleData(url) {
         const $ = cheerio.load(article.content);
         const safeImages = extractSafeImages($, dom);
         
-        // تنظيف النص وتوسيعه قليلاً
         let cleanText = article.textContent
             .trim()
             .replace(/\s+/g, ' ')
             .replace(/ADVERTISEMENT/gi, '')
             .replace(/Sponsor/gi, '')
-            .replace(/Ad\s/gi, '');
-            
-        // نأخذ أول 4000 حرف كأساس (سنطلب من AI التوسع)
-        cleanText = cleanText.slice(0, 4000);
+            .replace(/Ad\s/gi, '')
+            .slice(0, 3500);
 
         return { 
             title: article.title || "Untitled",
@@ -152,65 +158,35 @@ async function getArticleData(url) {
             link: url 
         };
     } catch (e) { 
-        console.log(`❌ Error fetching ${url}: ${e.message}`);
+        console.log(`❌ Error: ${e.message}`);
         return null; 
     }
 }
 
 async function generateSmartContent(article, retryCount = 0) {
-    const extraImages = article.images.length > 0 ? article.images : [SAFE_IMAGES[0]];
-    const mainImage = extraImages[0];
-    const otherImages = extraImages.slice(1, 3);
+    const prompt = `You are an Elite SEO Expert. Create a COMPREHENSIVE, DETAILED article (1800-2500 words).
 
-    const prompt = `You are an Elite SEO Expert and professional content writer. Create a COMPREHENSIVE, DETAILED, and LONG-FORM article based on the topic below.
+TOPIC: ${article.title}
 
-IMPORTANT RULES:
-1. The article MUST be at least 1500 words (aim for 1800-2500 words).
-2. Expand the topic with your own knowledge - add statistics, examples, case studies, and actionable advice.
-3. Structure the article professionally with multiple H2 and H3 headings.
-4. Add 2-3 Tip Boxes throughout the article.
-5. Include a "Key Takeaways" section at the beginning.
-6. Add a "Frequently Asked Questions (FAQ)" section at the end with 3-4 questions and answers.
-7. Use bold text for important keywords and phrases.
-8. Write in clear, engaging English.
+REFERENCE: ${article.text}
 
-Available images (use them naturally in the article):
-- Main/Featured image: ${mainImage}
-- Additional images: ${JSON.stringify(otherImages)}
+REQUIREMENTS:
+1. Article MUST be 1800-2500 words minimum
+2. Start with "Key Takeaways" box (4-5 bullet points)
+3. Use <h2> for main sections, <h3> for subsections
+4. Include 3 "Pro Tip" boxes throughout
+5. End with "Frequently Asked Questions" (4 Q&As)
+6. Use short paragraphs (2-3 sentences)
+7. Add bold text for important keywords
+8. Write in professional, engaging English
 
-OUTPUT FORMAT (JSON only, no extra text):
+OUTPUT (JSON only):
 {
-    "seoTitle": "SEO-optimized title (50-60 characters)",
-    "metaDescription": "Compelling meta description with keywords (150-160 characters)",
-    "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
-    "htmlContent": "Complete HTML article content without <h1>, <html>, <head>, <body>"
-}
-
-HTML STRUCTURE REQUIREMENTS:
-1. Start with a <div class="key-takeaways"> box containing 4-5 bullet points of main insights
-2. Use <h2> for main sections and <h3> for subsections
-3. Include 2-3 tip boxes:
-   <div class="tip-box">
-       <strong><i class="fas fa-lightbulb"></i> Pro Tip:</strong>
-       <p>Your valuable advice here...</p>
-   </div>
-4. Insert images using:
-   <div class="content-img">
-       <img src="IMAGE_URL" alt="Descriptive alt text">
-       <div class="caption">Image caption with useful context</div>
-   </div>
-5. End with an FAQ section:
-   <div class="faq-section">
-       <h2>Frequently Asked Questions</h2>
-       <div class="faq-item"><strong>Q: Question?</strong><p>A: Answer.</p></div>
-   </div>
-6. Use short paragraphs (2-3 sentences max)
-7. Include bullet points and numbered lists where appropriate
-
-Original topic inspiration: "${article.title}"
-Reference material: ${article.text}
-
-Create a unique, expanded, valuable article that helps readers solve problems or learn something new. DO NOT just copy the reference - expand and improve it significantly.`;
+    "seoTitle": "SEO title 50-60 chars",
+    "metaDescription": "Meta description 150-160 chars",
+    "keywords": ["kw1","kw2","kw3","kw4","kw5"],
+    "htmlContent": "Full HTML content without h1, html, head, body"
+}`;
 
     try {
         const completion = await groq.chat.completions.create({
@@ -224,101 +200,118 @@ Create a unique, expanded, valuable article that helps readers solve problems or
         const result = JSON.parse(completion.choices[0].message.content);
         
         if (!result.seoTitle || !result.htmlContent || result.htmlContent.length < 2000) {
-            throw new Error("Generated content too short");
+            throw new Error("Content too short");
         }
         
         return result;
     } catch (e) { 
         if (retryCount < 2) {
-            console.log(`⚠️ Retry ${retryCount + 1} for content generation...`);
+            console.log(`⚠️ Retry ${retryCount + 1}...`);
             await delay(5000);
             return generateSmartContent(article, retryCount + 1);
         }
-        console.log(`❌ Failed to generate content: ${e.message}`);
         return null; 
     }
 }
 
-async function publishToBlogger(aiData, mainImage, sourceLabel, readTime, currentDate) {
+async function publishToBlogger(aiData, mainImage, sourceLabel, readTime, currentDate, watermarkData) {
     try {
-        const safeMainImage = addWatermarkToImage(mainImage, aiData.seoTitle);
-        
-        const schemaJSON = {
-            "@context": "https://schema.org",
-            "@type": "Article",
-            "headline": aiData.seoTitle,
-            "image": [safeMainImage],
-            "datePublished": new Date().toISOString(),
-            "description": aiData.metaDescription,
-            "author": { "@type": "Organization", "name": "Tech Insights" }
-        };
+        // إنشاء HTML للعلامة المائية على الصورة الرئيسية
+        const featuredImageHtml = watermarkData && watermarkData.watermarkUrl ? `
+        <div class="featured-image">
+            <div class="watermark-container" style="position: relative;">
+                <img src="${escapeHtml(mainImage)}" alt="${escapeHtml(aiData.seoTitle)}" style="width:100%; border-radius:20px;">
+                <div class="watermark-overlay" style="position: absolute; bottom: 15px; right: 15px; background: rgba(0,0,0,0.6); color: white; padding: 5px 12px; border-radius: 8px; font-size: 12px; font-family: Arial; backdrop-filter: blur(4px);">
+                    <i class="fas fa-copyright"></i> Tech Insights ${new Date().getFullYear()}
+                </div>
+                <div class="watermark-diagonal" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-25deg); opacity: 0.25; pointer-events: none;">
+                    <img src="${watermarkData.watermarkUrl}" style="width: 300px;">
+                </div>
+            </div>
+        </div>
+        ` : `<div class="featured-image"><img src="${escapeHtml(mainImage)}" alt="${escapeHtml(aiData.seoTitle)}"></div>`;
 
         const htmlBody = `
-<script type="application/ld+json">
-${JSON.stringify(schemaJSON)}
-</script>
-
 <div class="main-wrapper" dir="ltr">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
         @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css');
         
-        .main-wrapper { font-family: 'Inter', sans-serif; background: #f5f7fa; color: #1e2a3e; line-height: 1.7; padding: 20px 0; }
-        .article-container { max-width: 880px; margin: 0 auto; background: white; border-radius: 24px; padding: 30px 40px 50px; box-shadow: 0 20px 35px -12px rgba(0,0,0,0.1); }
-        .article-header { margin-bottom: 30px; border-bottom: 2px solid #eef2f6; padding-bottom: 20px; }
-        .article-category { display: inline-block; background: #eef2ff; color: #2563eb; font-size: 0.85rem; font-weight: 700; padding: 6px 14px; border-radius: 30px; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.5px;}
-        .article-container h1 { font-size: 2.2rem; font-weight: 800; line-height: 1.3; margin-bottom: 16px; color: #0f172a; }
-        .article-meta { display: flex; flex-wrap: wrap; gap: 18px; font-size: 0.9rem; color: #64748b; margin-top: 10px; font-weight: 500;}
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background: #f0f4f8; padding: 20px; }
+        .main-wrapper { max-width: 880px; margin: 0 auto; background: white; border-radius: 28px; overflow: hidden; box-shadow: 0 20px 40px -15px rgba(0,0,0,0.15); }
+        .article-padding { padding: 35px 45px 50px; }
+        
+        /* Header */
+        .article-category { display: inline-block; background: #eef2ff; color: #2563eb; font-size: 0.8rem; font-weight: 700; padding: 5px 14px; border-radius: 30px; margin-bottom: 18px; letter-spacing: 0.5px; }
+        h1 { font-size: 2.3rem; font-weight: 800; line-height: 1.3; margin-bottom: 18px; color: #0a0f2c; }
+        .article-meta { display: flex; gap: 22px; font-size: 0.9rem; color: #5a6e85; margin: 15px 0 25px; padding-bottom: 20px; border-bottom: 2px solid #eef2f8; }
         .article-meta i { margin-right: 6px; color: #3b82f6; }
-        .featured-image { margin: 20px 0 30px; border-radius: 20px; overflow: hidden; box-shadow: 0 12px 24px -12px rgba(0,0,0,0.15); }
-        .featured-image img { width: 100%; height: auto; max-height: 500px; object-fit: cover; display: block; }
-        .article-content h2 { font-size: 1.8rem; font-weight: 700; margin: 40px 0 15px 0; padding-left: 14px; border-left: 5px solid #3b82f6; color: #0f172a; }
-        .article-content h3 { font-size: 1.4rem; font-weight: 600; margin: 30px 0 12px 0; color: #1e293b; }
-        .article-content p { margin-bottom: 1.2rem; font-size: 1.05rem; color: #334155; }
-        .article-content ul, .article-content ol { margin: 18px 0 22px 30px; }
-        .tip-box { background: #f0f9ff; border-left: 4px solid #0ea5e9; padding: 20px 24px; border-radius: 16px; margin: 30px 0; }
-        .tip-box strong { color: #0284c7; display: flex; align-items: center; gap: 8px; font-size: 1.2rem; margin-bottom: 10px; }
-        .key-takeaways { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 20px 24px; border-radius: 16px; margin: 20px 0 30px; }
-        .key-takeaways h3 { color: #b45309; margin-bottom: 12px; }
-        .faq-section { background: #f8fafc; border-radius: 20px; padding: 25px; margin: 40px 0 20px; }
-        .faq-item { margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #e2e8f0; }
-        .faq-item:last-child { border-bottom: none; }
-        .faq-item strong { color: #1e293b; font-size: 1.05rem; }
-        .content-img { margin: 35px 0; text-align: center; }
-        .content-img img { max-width: 100%; border-radius: 16px; box-shadow: 0 8px 20px rgba(0,0,0,0.1); }
-        .caption { font-size: 0.85rem; color: #64748b; margin-top: 10px; font-style: italic; }
-        .author-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 20px; padding: 25px; margin: 50px 0 20px; display: flex; flex-wrap: wrap; gap: 20px; align-items: center; }
-        .author-avatar { width: 70px; height: 70px; background: #e2e8f0; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; color: #475569; }
-        .image-attribution { font-size: 0.7rem; color: #94a3b8; text-align: center; margin-top: 5px; }
+        
+        /* Content */
+        .article-content h2 { font-size: 1.8rem; font-weight: 700; margin: 45px 0 18px 0; padding-left: 14px; border-left: 5px solid #3b82f6; color: #0a0f2c; }
+        .article-content h3 { font-size: 1.4rem; font-weight: 600; margin: 30px 0 12px 0; color: #1f2a48; }
+        .article-content p { margin-bottom: 1.2rem; font-size: 1.05rem; line-height: 1.7; color: #2d3a4a; }
+        .article-content ul, .article-content ol { margin: 18px 0 22px 35px; }
+        .article-content li { margin-bottom: 8px; }
+        
+        /* Key Takeaways */
+        .key-takeaways { background: linear-gradient(135deg, #fef7e0, #fff4e5); border-right: 4px solid #f59e0b; padding: 22px 28px; border-radius: 20px; margin: 20px 0 35px; }
+        .key-takeaways h3 { color: #b45309; margin-bottom: 15px; font-size: 1.3rem; display: flex; align-items: center; gap: 10px; }
+        .key-takeaways ul { margin: 0 0 0 20px; }
+        
+        /* Tip Box */
+        .tip-box { background: #f0f9ff; border-right: 4px solid #0ea5e9; padding: 20px 25px; border-radius: 18px; margin: 30px 0; }
+        .tip-box strong { color: #0284c7; display: flex; align-items: center; gap: 10px; font-size: 1.15rem; margin-bottom: 10px; }
+        .tip-box p { margin: 0 !important; }
+        
+        /* FAQ */
+        .faq-section { background: #f8fafc; border-radius: 24px; padding: 28px; margin: 45px 0 25px; }
+        .faq-section h2 { margin-top: 0 !important; border-left: none !important; padding-left: 0 !important; }
+        .faq-item { margin-bottom: 22px; padding-bottom: 18px; border-bottom: 1px solid #e2e8f0; }
+        .faq-item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+        .faq-item strong { color: #1e293b; font-size: 1rem; display: block; margin-bottom: 8px; }
+        
+        /* Images with Watermark */
+        .featured-image { margin: 25px 0 35px; border-radius: 24px; overflow: hidden; }
+        .content-img { margin: 35px 0; text-align: center; position: relative; }
+        .content-img img { max-width: 100%; border-radius: 20px; box-shadow: 0 10px 25px -10px rgba(0,0,0,0.15); }
+        .caption { font-size: 0.8rem; color: #6b7a8a; margin-top: 10px; }
+        .watermark-overlay { position: absolute; bottom: 15px; right: 15px; background: rgba(0,0,0,0.55); color: white; padding: 4px 12px; border-radius: 8px; font-size: 11px; font-family: monospace; backdrop-filter: blur(4px); z-index: 2; }
+        
+        /* Author */
+        .author-box { background: #f1f5f9; border-radius: 24px; padding: 25px; margin: 50px 0 20px; display: flex; gap: 22px; align-items: center; }
+        .author-avatar { width: 65px; height: 65px; background: #cbd5e1; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.8rem; color: #334155; }
+        .author-info h4 { font-size: 1.2rem; font-weight: 700; margin-bottom: 5px; }
+        .author-info p { font-size: 0.9rem; color: #475569; margin: 0; }
+        
         @media (max-width: 650px) {
-            .article-container h1 { font-size: 1.8rem; }
+            .article-padding { padding: 20px 22px 35px; }
+            h1 { font-size: 1.8rem; }
             .article-content h2 { font-size: 1.5rem; }
-            .article-container { padding: 20px 22px 35px; }
         }
     </style>
 
-    <div class="article-container">
-        <div class="article-header">
-            <span class="article-category"><i class="fas fa-bolt"></i> ${sourceLabel}</span>
-            <h1>${escapeHtml(aiData.seoTitle)}</h1>
-            <div class="article-meta">
-                <span><i class="far fa-calendar-alt"></i> ${currentDate}</span>
-                <span><i class="far fa-user"></i> Tech Insights Team</span>
-                <span><i class="far fa-clock"></i> ${readTime} min read</span>
-            </div>
+    <div class="article-padding">
+        <div class="article-category"><i class="fas fa-bolt"></i> ${sourceLabel}</div>
+        <h1>${escapeHtml(aiData.seoTitle)}</h1>
+        <div class="article-meta">
+            <span><i class="far fa-calendar-alt"></i> ${currentDate}</span>
+            <span><i class="far fa-user"></i> Tech Insights</span>
+            <span><i class="far fa-clock"></i> ${readTime} min read</span>
         </div>
-        <div class="featured-image">
-            <img src="${escapeHtml(safeMainImage)}" alt="${escapeHtml(aiData.seoTitle)}">
-            <div class="image-attribution">📷 Image for illustrative purposes | Source: Unsplash (Free for commercial use)</div>
-        </div>
+
+        ${featuredImageHtml}
+
         <div class="article-content">
             ${aiData.htmlContent}
         </div>
+
         <div class="author-box">
             <div class="author-avatar"><i class="fas fa-chalkboard-user"></i></div>
             <div class="author-info">
                 <h4>Tech Insights Editorial Team</h4>
-                <p>We deliver in-depth, research-backed content to help you stay ahead in the fast-evolving world of technology and digital business.</p>
+                <p>Professional tech journalism since 2018. We deliver in-depth analysis and actionable insights.</p>
             </div>
         </div>
     </div>
@@ -330,7 +323,7 @@ ${JSON.stringify(schemaJSON)}
         auth.setCredentials({ refresh_token: REFRESH_TOKEN });
         const blogger = google.blogger({ version: 'v3', auth });
 
-        const result = await blogger.posts.insert({
+        await blogger.posts.insert({
             blogId: BLOG_ID,
             requestBody: {
                 title: aiData.seoTitle,
@@ -340,11 +333,10 @@ ${JSON.stringify(schemaJSON)}
             }
         });
 
-        console.log(`✅ Published: ${aiData.seoTitle}`);
-        return result;
+        return true;
     } catch (e) {
-        console.log(`❌ Failed to publish: ${e.message}`);
-        return null;
+        console.log(`❌ Publish error: ${e.message}`);
+        return false;
     }
 }
 
@@ -358,72 +350,92 @@ function escapeHtml(str) {
     });
 }
 
+// الدالة الرئيسية مع إيقاف تام بعد الانتهاء
 async function startEmpireBot() {
-    console.log(`🚀 Bot started at ${new Date().toLocaleString()}`);
-    console.log(`📡 Total sources: ${SOURCES.length}`);
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`🚀 EMPIRE BOT STARTED at ${new Date().toLocaleString()}`);
+    console.log(`${'='.repeat(60)}\n`);
     
     let totalPublished = 0;
+    let totalAttempts = 0;
+    const enabledSources = SOURCES.filter(s => s.enabled);
     
-    for (let i = 0; i < SOURCES.length; i++) {
-        const source = SOURCES[i];
-        console.log(`\n📰 Processing source ${i+1}/${SOURCES.length}: ${source.label}`);
+    console.log(`📡 Active sources: ${enabledSources.length}\n`);
+    
+    for (let i = 0; i < enabledSources.length; i++) {
+        const source = enabledSources[i];
+        console.log(`[${i+1}/${enabledSources.length}] 📰 Processing: ${source.label}`);
         
         try {
             const feed = await parser.parseURL(source.url);
             if (!feed.items || feed.items.length === 0) {
-                console.log(`⚠️ No items found in ${source.label}`);
+                console.log(`   ⚠️ No items found\n`);
                 continue;
             }
             
             const items = feed.items.slice(0, 2);
-            let postedSuccessfully = false;
+            let published = false;
 
             for (let j = 0; j < items.length; j++) {
+                totalAttempts++;
                 const item = items[j];
-                console.log(`  🔍 Fetching article ${j+1}/${items.length}: ${item.title?.substring(0, 50)}...`);
+                console.log(`   🔍 [${j+1}/${items.length}] ${item.title?.substring(0, 45)}...`);
                 
                 const data = await getArticleData(item.link);
                 if (!data || data.text.length < 300) {
-                    console.log(`  ⏭️ Skipping: content too short or unavailable`);
+                    console.log(`   ⏭️ Skipped: insufficient content\n`);
                     continue;
                 }
                 
-                console.log(`  📝 Generating comprehensive AI content (this may take 30-60 seconds)...`);
+                console.log(`   ✍️ Generating article (this takes ~45 sec)...`);
                 const aiData = await generateSmartContent(data);
                 if (!aiData || !aiData.htmlContent || aiData.htmlContent.length < 1500) {
-                    console.log(`  ⏭️ Skipping: AI generation failed or content too short`);
+                    console.log(`   ⏭️ Skipped: AI generation failed\n`);
                     continue;
                 }
 
-                const coverImg = (data.images && data.images.length > 0) 
+                const coverImg = data.images && data.images.length > 0 
                     ? data.images[0] 
                     : SAFE_IMAGES[Math.floor(Math.random() * SAFE_IMAGES.length)];
-
+                
+                const watermarkData = await addWatermarkToImage(coverImg, aiData.seoTitle);
+                
                 const wordCount = aiData.htmlContent.replace(/<[^>]*>/g, '').split(/\s+/).length;
-                const readTime = Math.max(5, Math.ceil(wordCount / 200));
+                const readTime = Math.max(6, Math.ceil(wordCount / 210));
                 const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
-                await publishToBlogger(aiData, coverImg, source.label, readTime, currentDate);
-                postedSuccessfully = true;
-                totalPublished++;
-                break;
+                const success = await publishToBlogger(aiData, coverImg, source.label, readTime, currentDate, watermarkData);
+                
+                if (success) {
+                    totalPublished++;
+                    published = true;
+                    console.log(`   ✅ PUBLISHED: "${aiData.seoTitle.substring(0, 50)}..."`);
+                    console.log(`   📊 Stats: ${wordCount} words | ${readTime} min read\n`);
+                    break;
+                }
             }
 
-            if (postedSuccessfully && i < SOURCES.length - 1) {
+            if (published && i < enabledSources.length - 1) {
                 const waitTime = getRandomDelay();
-                console.log(`  ⏳ Waiting ${Math.round(waitTime/1000)} seconds before next source...`);
+                console.log(`   ⏳ Waiting ${Math.round(waitTime/1000)} seconds before next source...\n`);
                 await delay(waitTime);
+            } else if (!published) {
+                console.log(`   ❌ No article published from this source\n`);
             }
 
         } catch (err) {
-            console.log(`❌ Error processing ${source.label}: ${err.message}`);
+            console.log(`   ❌ Error: ${err.message}\n`);
         }
     }
     
-    console.log(`\n🏁 Bot finished! Total published: ${totalPublished} articles`);
+    console.log(`${'='.repeat(60)}`);
+    console.log(`🏁 BOT FINISHED at ${new Date().toLocaleString()}`);
+    console.log(`📊 SUMMARY: ${totalPublished} articles published from ${totalAttempts} attempts`);
+    console.log(`${'='.repeat(60)}`);
+    
+    // إيقاف تام للعملية
+    process.exit(0);
 }
 
-startEmpireBot().catch(err => {
-    console.error(`💥 Fatal error: ${err.message}`);
-    process.exit(1);
-});
+// تشغيل البوت
+startEmpireBot();
