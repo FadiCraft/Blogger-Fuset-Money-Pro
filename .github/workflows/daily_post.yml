@@ -2,7 +2,7 @@ name: Google News Blogger Bot
 
 on:
   schedule:
-    - cron: '0 * * * *' # تم التصحيح: سيعمل الآن كل ساعة بالضبط لتواكب التريند
+   - cron: '0 */5 * * *' # يعمل كل 5 ساعات (إذا أردته كل ساعة استخدم '0 * * * *')
   workflow_dispatch: # زر التشغيل اليدوي
 
 jobs:
