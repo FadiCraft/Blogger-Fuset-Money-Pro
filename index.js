@@ -258,7 +258,7 @@ async function startBot() {
                     const html = getTemplate(content, rawArticle.images);
                     
                     // هنا تقوم بالنشر عبر API بلوجر
-                    // await publishPost(content, html, category);
+                     await publishPost(content, html, category);
                     
                     saveToHistory(item.link); // حفظ الرابط حتى لا يتكرر
                     console.log(`✅ تم تجهيز ونشر المقال بنجاح!`);
