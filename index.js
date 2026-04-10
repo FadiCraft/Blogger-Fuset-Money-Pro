@@ -169,7 +169,7 @@ function getTemplate(content, images) {
         
         /* صندوق الملاحظات الهامة */
         .highlight-box { background: #e8f4fd; border: 1px solid #b6e0fe; padding: 20px; border-radius: 8px; margin: 30px 0; font-weight: bold; color: #0056b3; }
-        .highlight-box::before { content: '💡 ملاحظة هامة: '; color: #004494; font-size: 1.1em; }
+        .highlight-box::before { content: '💡'; color: #004494; font-size: 1.1em; }
 
         /* الإيجابيات والسلبيات */
         .pros-cons { display: flex; gap: 20px; margin: 40px 0; flex-wrap: wrap; }
@@ -178,8 +178,8 @@ function getTemplate(content, images) {
         .cons { background: #fdedec; border: 1px solid #f5c6cb; }
         .pros h3 { color: #27ae60; margin-top: 0; }
         .cons h3 { color: #c0392b; margin-top: 0; }
-        .pros ul li::marker { content: '✅ '; }
-        .cons ul li::marker { content: '❌ '; }
+        .pros ul li::marker { content: ''; }
+        .cons ul li::marker { content: ''; }
 
         /* الأسئلة الشائعة */
         .faq { background: #fff; border: 1px solid #eee; padding: 20px; border-radius: 8px; margin-top: 40px; }
@@ -209,16 +209,16 @@ function getTemplate(content, images) {
     
     <div class="pros-cons">
         <div class="pros">
-            <h3>الإيجابيات (المميزات)</h3>
+            <h3>Advantages</h3>
             <ul>${content.prosCons.pros.map(p => `<li>${escapeHtml(p)}</li>`).join('')}</ul>
         </div>
         <div class="cons">
-            <h3>السلبيات (العيوب)</h3>
+            <h3>Disadvantages</h3>
             <ul>${content.prosCons.cons.map(c => `<li>${escapeHtml(c)}</li>`).join('')}</ul>
         </div>
     </div>
     
-    <h2>أسئلة شائعة (FAQ)</h2>
+    <h2>(FAQ)</h2>
     ${content.faqs.map(faq => `
         <div class="faq">
             <h3>${escapeHtml(faq.q)}</h3>
