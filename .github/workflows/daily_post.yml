@@ -17,11 +17,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          # أزل cache: 'npm' أو اتركه فارغاً
       
       - name: Install Dependencies
         run: |
-          npm install
+          npm install rss-parser jsdom @mozilla/readability cheerio googleapis groq-sdk axios puppeteer
       
       - name: Install Puppeteer Browser
         run: |
