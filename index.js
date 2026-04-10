@@ -9,11 +9,11 @@ const fs = require('fs');
 const path = require('path');
 
 // --- الإعدادات والمفاتيح ---
-const BLOG_ID = process.env.BLOG_ID || "YOUR_BLOG_ID";
-const CLIENT_ID = process.env.CLIENT_ID || "YOUR_CLIENT_ID";
-const CLIENT_SECRET = process.env.CLIENT_SECRET || "YOUR_CLIENT_SECRET";
-const REFRESH_TOKEN = process.env.REFRESH_TOKEN || "YOUR_REFRESH_TOKEN";
-const GROQ_API_KEY = process.env.GROQ_API_KEY || "YOUR_GROQ_KEY";
+const BLOG_ID = process.env.BLOG_ID || "2636919176960128451";
+const CLIENT_ID = process.env.CLIENT_ID || "872415365656-7qribadnc7k2u21kl6jjcbatdueevifh.apps.googleusercontent.com";
+const CLIENT_SECRET = process.env.CLIENT_SECRET || "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";
+const REFRESH_TOKEN = process.env.REFRESH_TOKEN || "1//04yti9k2agPknCgYIARAAGAQSNwF-L9IrTZPKt5Fqbg2vrM9sBtOks9cnY4M7Idg0LToQnlbYGME06k20vcyr_SVmYk1H_yZJdEc";
+const GROQ_API_KEY = process.env.GROQ_API_KEY || "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";
 
 const groq = new Groq({ apiKey: GROQ_API_KEY });
 const parser = new Parser({ timeout: 30000 });
