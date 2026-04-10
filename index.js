@@ -232,6 +232,32 @@ function getTemplate(content, images) {
 
 function escapeHtml(str) { return str ? str.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m])) : ''; }
 
+
+// --- دالة النشر في بلوجر ---
+async function publishPost(content, html, category) {
+    try {
+        const auth = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET);
+        auth.setCredentials({ refresh_token: REFRESH_TOKEN });
+        const blogger = google.blogger({ version: 'v3', auth });
+        
+        console.log(`📡 جاري الاتصال بـ Blogger لنشر المقال...`);
+        
+        await blogger.posts.insert({
+            blogId: BLOG_ID,
+            requestBody: {
+                title: content.seoTitle, // العنوان من الذكاء الاصطناعي
+                content: html,           // المحتوى المنسق بـ HTML
+                labels: [category]       // القسم
+            }
+        });
+        
+        return true;
+    } catch (e) {
+        console.log(`❌ خطأ في API بلوجر: ${e.message}`);
+        return false;
+    }
+}
+
 // --- البوت الرئيسي ---
 async function startBot() {
     const history = loadHistory();
