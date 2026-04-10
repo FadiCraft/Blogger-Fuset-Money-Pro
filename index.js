@@ -19,10 +19,41 @@ const groq = new Groq({ apiKey: GROQ_API_KEY });
 const parser = new Parser({ timeout: 30000 });
 const HISTORY_FILE = path.join(__dirname, 'history.json');
 
-// --- نظام منع التكرار ---
-function loadHistory() { /* ... كما هو ... */ }
-function saveToHistory(url) { /* ... كما هو ... */ }
+// --- نظام منع التكرار (نسخة كاملة وصحيحة) ---
+function loadHistory() {
+    try {
+        if (fs.existsSync(HISTORY_FILE)) {
+            const data = fs.readFileSync(HISTORY_FILE, 'utf8');
+            // التأكد من أن الملف ليس فارغاً
+            if (!data || data.trim() === '') {
+                return [];
+            }
+            const parsed = JSON.parse(data);
+            // التأكد من أن البيانات عبارة عن مصفوفة
+            return Array.isArray(parsed) ? parsed : [];
+        }
+        return []; // ✅ هذا هو المهم: إرجاع مصفوفة فارغة إذا لم يوجد الملف
+    } catch (error) {
+        console.error('❌ خطأ في قراءة ملف history.json:', error.message);
+        return []; // ✅ إرجاع مصفوفة فارغة في حالة أي خطأ
+    }
+}
 
+function saveToHistory(url) {
+    try {
+        const history = loadHistory(); // الآن مضمون أنها مصفوفة
+        // منع التكرار (فحص إضافي)
+        if (!history.includes(url)) {
+            history.push(url);
+            // الاحتفاظ بآخر 500 رابط فقط لمنع تضخم الملف
+            const trimmedHistory = history.slice(-500);
+            fs.writeFileSync(HISTORY_FILE, JSON.stringify(trimmedHistory, null, 2));
+            console.log(`📝 تم الحفظ في السجل: ${url}`);
+        }
+    } catch (error) {
+        console.error('❌ خطأ في حفظ ملف history.json:', error.message);
+    }
+}
 // --- المصادر ---
 const RELIABLE_RSS_FEEDS = {
     "Technology": [{ name: "The Verge", url: "https://www.theverge.com/rss/index.xml" }],
@@ -105,7 +136,7 @@ async function generateHighQualityArticle(article, category) {
 **النص الخام:** ${article.text.substring(0, 7000)}
 
 **تعليمات صارمة:**
-1. **اللغة:** العربية الفصحى السليمة فقط. لا تستخدم العامية أو الركاكة.
+1. **اللغة:** الانجليزيه السليمة فقط. لا تستخدم العامية أو الركاكة.
 2. **الهيكل:** يجب أن يحتوي على مقدمة مشوقة، وهيكل واضح بعناوين فرعية (H2).
 3. **التنسيق:** أضف فقرة "نظرة سريعة" (Quick Overview) في البداية.
 4. **الإثراء:** أضف رأي خبير أو ملاحظة هامة.
@@ -113,8 +144,8 @@ async function generateHighQualityArticle(article, category) {
 
 **أعد الرد بصيغة JSON فقط بدون أي نصوص إضافية خارج الأقواس:**
 {
-    "seoTitle": "عنوان SEO عربي جذاب (لا يزيد عن 60 حرف)",
-    "metaDescription": "وصف ميتا عربي (140-160 حرف) يشجع على النقر",
+    "seoTitle": "عنوان SEO انجليزي جذاب (لا يزيد عن 60 حرف)",
+    "metaDescription": "وصف ميتا انجليزي (140-160 حرف) يشجع على النقر",
     "introduction": "مقدمة قوية من 3-4 أسطر تشرح أهمية الموضوع.",
     "hookBox": {
         "title": "🔍 نظرة سريعة على الموضوع",
