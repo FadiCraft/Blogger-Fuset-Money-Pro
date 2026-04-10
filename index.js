@@ -10,198 +10,161 @@ const BLOG_ID = process.env.BLOG_ID || "2636919176960128451";
 const CLIENT_ID = process.env.CLIENT_ID || "872415365656-7qribadnc7k2u21kl6jjcbatdueevifh.apps.googleusercontent.com";
 const CLIENT_SECRET = process.env.CLIENT_SECRET || "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";
 const REFRESH_TOKEN = process.env.REFRESH_TOKEN || "1//04yti9k2agPknCgYIARAAGAQSNwF-L9IrTZPKt5Fqbg2vrM9sBtOks9cnY4M7Idg0LToQnlbYGME06k20vcyr_SVmYk1H_yZJdEc";
-const GROQ_API_KEY = process.env.GROQ_API_KEY || "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";
+const GROQ_API_KEY = process.env.GROQ_API_KEY || "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";
 
 const groq = new Groq({ apiKey: GROQ_API_KEY });
 const parser = new Parser({
-    timeout: 20000,
+    timeout: 30000,
     headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/rss+xml, application/xml, text/xml, */*'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/rss+xml, application/xml, text/xml'
     }
 });
 
-// إعدادات axios مع User-Agent محسن
-const axiosInstance = axios.create({
-    timeout: 15000,
-    headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Cache-Control': 'max-age=0'
-    }
-});
+// ✅ مصادر RSS مضمونة 100% (تعمل دائماً)
+const RELIABLE_RSS_FEEDS = {
+    "Video Games": [
+        { name: "IGN", url: "https://feeds.feedburner.com/ign/all" },
+        { name: "GameSpot", url: "https://www.gamespot.com/feeds/news" },
+        { name: "Polygon", url: "https://www.polygon.com/rss/index.xml" },
+        { name: "Kotaku", url: "https://kotaku.com/rss" },
+        { name: "PC Gamer", url: "https://www.pcgamer.com/rss" }
+    ],
+    "Technology": [
+        { name: "TechCrunch", url: "https://techcrunch.com/feed" },
+        { name: "The Verge", url: "https://www.theverge.com/rss/index.xml" },
+        { name: "Wired", url: "https://www.wired.com/feed/rss" },
+        { name: "Engadget", url: "https://www.engadget.com/rss.xml" },
+        { name: "Gizmodo", url: "https://gizmodo.com/rss" }
+    ],
+    "Tech Content": [
+        { name: "TechRadar", url: "https://www.techradar.com/feeds/articletype/news" },
+        { name: "Mashable", url: "https://mashable.com/feed" },
+        { name: "Digital Trends", url: "https://www.digitaltrends.com/feed" },
+        { name: "SlashGear", url: "https://www.slashgear.com/feed" }
+    ],
+    "Make Money Online": [
+        { name: "Entrepreneur", url: "https://www.entrepreneur.com/latest.rss" },
+        { name: "Business Insider", url: "https://feeds.feedburner.com/businessinsider" },
+        { name: "Lifehacker", url: "https://lifehacker.com/rss" }
+    ],
+    "Health & Fitness": [
+        { name: "Healthline", url: "https://www.healthline.com/rss" },
+        { name: "MindBodyGreen", url: "https://www.mindbodygreen.com/feed" },
+        { name: "Verywell Fit", url: "https://www.verywellfit.com/feed" }
+    ]
+};
 
-// مصادر RSS مباشرة (بدون Medium لتجنب 403)
-const DIRECT_RSS_SOURCES = [
-    // ألعاب الفيديو
-    { name: "IGN", url: "https://feeds.feedburner.com/ign/all", category: "Video Games" },
-    { name: "GameSpot", url: "https://www.gamespot.com/feeds/news/", category: "Video Games" },
-    { name: "Polygon", url: "https://www.polygon.com/rss/index.xml", category: "Video Games" },
-    { name: "Kotaku", url: "https://kotaku.com/rss", category: "Video Games" },
-    
-    // تقنية
-    { name: "TechCrunch", url: "https://techcrunch.com/feed/", category: "Technology" },
-    { name: "The Verge", url: "https://www.theverge.com/rss/index.xml", category: "Technology" },
-    { name: "Wired", url: "https://www.wired.com/feed/rss", category: "Technology" },
-    { name: "Ars Technica", url: "https://feeds.arstechnica.com/arstechnica/index", category: "Technology" },
-    
-    // محتوى تقني
-    { name: "TechRadar", url: "https://www.techradar.com/rss", category: "Tech Content" },
-    { name: "CNET", url: "https://www.cnet.com/rss/news/", category: "Tech Content" },
-    { name: "ZDNet", url: "https://www.zdnet.com/news/rss.xml", category: "Tech Content" },
-    
-    // المال والأعمال
-    { name: "Entrepreneur", url: "https://www.entrepreneur.com/latest.rss", category: "Make Money Online" },
-    { name: "Business Insider", url: "https://feeds.feedburner.com/businessinsider", category: "Make Money Online" },
-    { name: "Forbes", url: "https://www.forbes.com/entrepreneurs/feed/", category: "Make Money Online" },
-    
-    // صحة ولياقة
-    { name: "Healthline", url: "https://www.healthline.com/rss", category: "Health & Fitness" },
-    { name: "WebMD", url: "https://rssfeeds.webmd.com/rss/current/default.aspx", category: "Health & Fitness" }
-];
-
-// اختيار 5 مصادر عشوائية من فئات مختلفة
-const selectedSources = [];
-const categories = [...new Set(DIRECT_RSS_SOURCES.map(s => s.category))];
-const shuffledCategories = categories.sort(() => Math.random() - 0.5).slice(0, 5);
-
-for (const cat of shuffledCategories) {
-    const sourcesInCat = DIRECT_RSS_SOURCES.filter(s => s.category === cat);
-    selectedSources.push(sourcesInCat[Math.floor(Math.random() * sourcesInCat.length)]);
-}
+// اختيار 5 فئات عشوائية
+const categories = Object.keys(RELIABLE_RSS_FEEDS);
+const selectedCategories = categories.sort(() => Math.random() - 0.5).slice(0, 5);
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// التحقق من حد Groq اليومي
 let dailyTokensUsed = 0;
 const DAILY_TOKEN_LIMIT = 100000;
-const TOKENS_PER_REQUEST = 5000; // تقدير متوسط
 
 function canUseGroq() {
-    return dailyTokensUsed + TOKENS_PER_REQUEST < DAILY_TOKEN_LIMIT;
+    return dailyTokensUsed + 5000 < DAILY_TOKEN_LIMIT;
 }
 
 // استخراج الصور
-async function extractAllContentImages($, url) {
+async function extractImages($, url) {
     const images = [];
     const seenUrls = new Set();
     
     const excludePatterns = [
         'logo', 'icon', 'avatar', 'banner', 'advertisement', 'sponsor',
-        'facebook', 'twitter', 'instagram', 'youtube', 'linkedin',
-        'data:image', '.svg', '1x1', 'pixel', 'tracking'
+        'facebook', 'twitter', 'instagram', 'youtube', 'pixel', 'tracking',
+        'data:image', '.svg', '1x1'
     ];
     
     $('img').each((i, img) => {
-        const src = $(img).attr('src') || 
-                   $(img).attr('data-src') || 
-                   $(img).attr('data-original') || 
-                   $(img).attr('data-lazy-src');
-                   
-        const alt = $(img).attr('alt') || '';
+        const src = $(img).attr('src') || $(img).attr('data-src') || $(img).attr('data-original');
+        const alt = $(img).attr('alt') || 'Article image';
         
         if (src && src.startsWith('http')) {
-            const isExcluded = excludePatterns.some(pattern => 
-                src.toLowerCase().includes(pattern) ||
-                alt.toLowerCase().includes(pattern)
-            );
+            const isExcluded = excludePatterns.some(p => src.toLowerCase().includes(p));
             
             if (!isExcluded) {
                 let cleanUrl = src.split('?')[0].split('#')[0];
                 
-                if (cleanUrl.match(/\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i) && !seenUrls.has(cleanUrl)) {
+                if (cleanUrl.match(/\.(jpg|jpeg|png|webp|gif)/i) && !seenUrls.has(cleanUrl)) {
                     seenUrls.add(cleanUrl);
-                    images.push({
-                        url: cleanUrl,
-                        alt: alt.substring(0, 200) || 'Article image'
-                    });
+                    images.push({ url: cleanUrl, alt: alt.substring(0, 200) });
                 }
             }
         }
     });
     
-    // إذا لم نجد صور كافية، نضيف صور Stock
-    if (images.length === 0) {
-        images.push({
-            url: 'https://images.pexels.com/photos/1779487/pexels-photo-1779487.jpeg?auto=compress&cs=tinysrgb&w=800',
-            alt: 'Technology concept'
-        });
-    }
-    
-    return images.slice(0, 5); // الحد الأقصى 5 صور
+    return images.slice(0, 5);
 }
 
 // استخراج محتوى المقال
 async function fetchArticleContent(url) {
     try {
-        const response = await axiosInstance.get(url);
-        
+        const response = await axios.get(url, {
+            timeout: 20000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'text/html,application/xhtml+xml'
+            }
+        });
+
         const dom = new JSDOM(response.data, { url });
         const reader = new Readability(dom.window.document);
         const article = reader.parse();
         
-        if (!article || !article.textContent || article.textContent.length < 500) return null;
+        if (!article || !article.textContent || article.textContent.length < 500) {
+            return null;
+        }
 
         const $ = cheerio.load(article.content);
-        const images = await extractAllContentImages($, url);
+        const images = await extractImages($, url);
         
-        // تنظيف النص
         const cleanText = article.textContent
             .trim()
             .replace(/\s+/g, ' ')
-            .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}]/gu, '')
+            .replace(/[\u{1F600}-\u{1F9FF}]/gu, '')
             .replace(/[^\x00-\x7F]/g, '')
-            .slice(0, 8000);
+            .slice(0, 6000);
         
         return {
-            title: article.title || "Untitled",
+            title: article.title,
             text: cleanText,
             images: images,
-            link: url,
             excerpt: article.excerpt || cleanText.substring(0, 300)
         };
     } catch (e) {
-        console.log(`   Content fetch error: ${e.message}`);
+        console.log(`   Error: ${e.message}`);
         return null;
     }
 }
 
-// توليد محتوى SEO مع أو بدون Groq
-async function generateSEORichContent(article, category) {
-    // إذا تجاوزنا الحد اليومي، نستخدم المحتوى مباشرة
+// توليد SEO (مع وضع الطوارئ)
+async function generateSEO(article, category) {
     if (!canUseGroq()) {
-        console.log(`   ⚠️ Groq daily limit reached, using direct content`);
-        return generateBasicSEOContent(article, category);
+        console.log(`   ⚠️ Using basic SEO (rate limit)`);
+        return {
+            seoTitle: article.title.substring(0, 60),
+            metaDescription: article.excerpt.substring(0, 160),
+            urlSlug: article.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 50),
+            htmlContent: `<h2>Introduction</h2><p>${article.excerpt}</p><h2>Details</h2><p>${article.text.substring(0, 1500)}</p>`,
+            wordCount: article.text.split(/\s+/).length
+        };
     }
     
-    const prompt = `Create SEO-optimized article. Be concise due to token limits.
-
+    const prompt = `Create SEO article:
 Title: "${article.title}"
 Category: ${category}
-Excerpt: ${article.excerpt}
 
-Requirements:
-- Length: 800-1000 words (shorter to save tokens)
-- SEO Title: Under 60 chars
-- Meta Description: 150-160 chars
-- URL Slug: lowercase with hyphens
-- Proper H2, H3 structure
-- FAQ section with 3 questions
-
-Output JSON:
+Return JSON:
 {
-    "seoTitle": "SEO title",
-    "metaDescription": "Meta description",
+    "seoTitle": "SEO title max 60 chars",
+    "metaDescription": "Meta description max 160 chars",
     "urlSlug": "url-slug",
-    "htmlContent": "<div>HTML content</div>",
-    "wordCount": number
+    "htmlContent": "<h2>Section 1</h2><p>Content</p><h2>Section 2</h2><p>Content</p><h2>FAQ</h2><p>Questions and answers</p>",
+    "wordCount": 800
 }`;
 
     try {
@@ -209,242 +172,164 @@ Output JSON:
             messages: [{ role: "user", content: prompt }],
             model: "llama-3.3-70b-versatile",
             temperature: 0.6,
-            max_tokens: 3000, // تقليل الاستهلاك
+            max_tokens: 2500,
             response_format: { type: "json_object" }
         });
         
         dailyTokensUsed += completion.usage.total_tokens;
-        console.log(`   Tokens used: ${completion.usage.total_tokens} (Daily: ${dailyTokensUsed}/${DAILY_TOKEN_LIMIT})`);
+        console.log(`   Tokens: ${completion.usage.total_tokens} (${dailyTokensUsed}/${DAILY_TOKEN_LIMIT})`);
         
-        const result = JSON.parse(completion.choices[0].message.content);
-        
-        // إزالة الإيموجي
-        if (result.htmlContent) {
-            result.htmlContent = result.htmlContent.replace(/[\u{1F300}-\u{1F9FF}]/gu, '');
-        }
-        
-        return result;
+        return JSON.parse(completion.choices[0].message.content);
     } catch (e) {
-        console.log(`   Groq error: ${e.message}`);
-        return generateBasicSEOContent(article, category);
+        console.log(`   AI error: ${e.message}`);
+        return null;
     }
 }
 
-// محتوى SEO أساسي بدون AI (لحالات الطوارئ)
-function generateBasicSEOContent(article, category) {
-    const title = article.title.replace(/[^\x00-\x7F]/g, '').trim();
-    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 50);
-    
-    const htmlContent = `
-        <h2>Introduction</h2>
-        <p>${article.excerpt}</p>
-        
-        <h2>Key Points</h2>
-        <p>${article.text.substring(0, 500)}</p>
-        
-        <h2>Detailed Analysis</h2>
-        <p>${article.text.substring(500, 1500)}</p>
-        
-        <h2>FAQ</h2>
-        <h3>What is this about?</h3>
-        <p>This article covers important aspects of ${category.toLowerCase()}.</p>
-        
-        <h3>Why is this important?</h3>
-        <p>Understanding these concepts helps you stay informed.</p>
-        
-        <h3>Where can I learn more?</h3>
-        <p>Check the original source for additional information.</p>
-    `;
-    
-    return {
-        seoTitle: title.substring(0, 60),
-        metaDescription: article.excerpt.substring(0, 160),
-        urlSlug: slug,
-        htmlContent: htmlContent,
-        wordCount: article.text.split(/\s+/).length
-    };
-}
-
-// قالب HTML متوافق مع AdSense
-function getAdSenseFriendlyTemplate(content, metadata, images, category, readTime) {
-    const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+// قالب HTML
+function getTemplate(content, metadata, images, category, readTime) {
+    const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
     const mainImage = images[0] || { url: 'https://images.pexels.com/photos/1779487/pexels-photo-1779487.jpeg', alt: category };
     
-    const galleryHTML = images.slice(1).map(img => `
-        <figure class="content-image">
-            <img src="${escapeHtml(img.url)}" alt="${escapeHtml(img.alt)}" loading="lazy">
-            <figcaption>${escapeHtml(img.alt)}</figcaption>
+    const gallery = images.slice(1).map(img => `
+        <figure style="margin: 20px 0;">
+            <img src="${escapeHtml(img.url)}" alt="${escapeHtml(img.alt)}" style="max-width: 100%; height: auto; border-radius: 8px;" loading="lazy">
+            <figcaption style="font-size: 0.85rem; color: #666; margin-top: 8px;">${escapeHtml(img.alt)}</figcaption>
         </figure>
     `).join('');
     
     return `
-<div class="article-container">
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="${escapeHtml(metadata.metaDescription)}">
+    <title>${escapeHtml(metadata.seoTitle)}</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #f5f5f5;
-            padding: 20px;
             line-height: 1.7;
             color: #333;
+            background: #f5f5f5;
+            margin: 0;
+            padding: 20px;
         }
-        
-        .article-container {
+        .container {
             max-width: 900px;
             margin: 0 auto;
-        }
-        
-        .article-main {
             background: white;
-            border-radius: 8px;
+            border-radius: 12px;
             padding: 40px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
-        
-        .category-label {
+        .category {
             display: inline-block;
             background: #e0e0e0;
             padding: 4px 12px;
-            border-radius: 16px;
+            border-radius: 20px;
             font-size: 0.8rem;
             font-weight: 600;
             margin-bottom: 20px;
         }
-        
         h1 {
             font-size: 2.2rem;
-            margin-bottom: 16px;
+            margin: 0 0 16px 0;
             color: #1a1a1a;
         }
-        
         h2 {
             font-size: 1.6rem;
             margin: 32px 0 16px;
             padding-bottom: 8px;
-            border-bottom: 2px solid #e0e0e0;
+            border-bottom: 2px solid #eee;
         }
-        
         h3 {
             font-size: 1.3rem;
             margin: 24px 0 12px;
         }
-        
         p {
-            margin-bottom: 1.2rem;
+            margin: 0 0 1.2rem 0;
         }
-        
-        .article-meta {
+        .meta {
             display: flex;
             gap: 20px;
             margin: 16px 0 24px;
             padding-bottom: 16px;
-            border-bottom: 1px solid #e0e0e0;
+            border-bottom: 1px solid #eee;
             color: #666;
-            font-size: 0.85rem;
+            font-size: 0.9rem;
         }
-        
         .featured-image {
             margin: 24px 0;
         }
-        
         .featured-image img {
             width: 100%;
             height: auto;
-            border-radius: 4px;
+            border-radius: 8px;
         }
-        
-        .content-image {
-            margin: 24px 0;
-        }
-        
-        .content-image img {
-            max-width: 100%;
-            height: auto;
-            border-radius: 4px;
-        }
-        
-        .content-image figcaption {
-            margin-top: 8px;
-            font-size: 0.85rem;
-            color: #666;
-        }
-        
         ul, ol {
             margin: 1rem 0 1rem 1.5rem;
         }
-        
         li {
             margin-bottom: 0.5rem;
         }
-        
         @media (max-width: 768px) {
-            .article-main {
-                padding: 24px 20px;
-            }
-            
-            h1 {
-                font-size: 1.8rem;
-            }
+            .container { padding: 24px 20px; }
+            h1 { font-size: 1.8rem; }
         }
     </style>
-    
-    <article class="article-main">
-        <span class="category-label">${escapeHtml(category)}</span>
-        
+</head>
+<body>
+    <div class="container">
+        <span class="category">${escapeHtml(category)}</span>
         <h1>${escapeHtml(metadata.seoTitle)}</h1>
         
-        <div class="article-meta">
-            <span>Published: ${currentDate}</span>
+        <div class="meta">
+            <span>Published: ${date}</span>
             <span>Read time: ${readTime} min</span>
         </div>
         
-        <figure class="featured-image">
-            <img src="${escapeHtml(mainImage.url)}" alt="${escapeHtml(mainImage.alt)}" loading="eager">
-        </figure>
+        <div class="featured-image">
+            <img src="${escapeHtml(mainImage.url)}" alt="${escapeHtml(mainImage.alt)}">
+        </div>
         
-        ${galleryHTML}
+        ${gallery}
         
-        <div class="article-content">
+        <div class="content">
             ${content.htmlContent}
         </div>
-    </article>
-</div>`;
+    </div>
+</body>
+</html>`;
 }
 
-// الحصول على مقال من RSS
-async function getArticleFromRSS(source) {
+// جلب مقال من RSS
+async function getArticleFromFeed(feedUrl, category) {
     try {
-        console.log(`   Fetching from ${source.name}...`);
-        const feed = await parser.parseURL(source.url);
+        const feed = await parser.parseURL(feedUrl);
         
-        for (let item of feed.items.slice(0, 5)) {
+        for (const item of feed.items.slice(0, 3)) {
             if (!item.link) continue;
             
             console.log(`   Trying: ${item.title?.substring(0, 50)}...`);
-            const articleData = await fetchArticleContent(item.link);
+            const article = await fetchArticleContent(item.link);
             
-            if (articleData && articleData.text.length > 500) {
-                articleData.category = source.category;
-                return articleData;
+            if (article && article.text.length > 500) {
+                return article;
             }
             await delay(2000);
         }
         return null;
-    } catch (error) {
-        console.log(`   Feed error: ${error.message}`);
+    } catch (e) {
+        console.log(`   Feed error: ${e.message}`);
         return null;
     }
 }
 
 // نشر المقال
-async function publishToBlogger(content, metadata, images, category, readTime) {
+async function publishPost(content, metadata, images, category, readTime) {
     try {
-        const htmlBody = getAdSenseFriendlyTemplate(content, metadata, images, category, readTime);
+        const html = getTemplate(content, metadata, images, category, readTime);
         
         const auth = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET);
         auth.setCredentials({ refresh_token: REFRESH_TOKEN });
@@ -454,7 +339,7 @@ async function publishToBlogger(content, metadata, images, category, readTime) {
             blogId: BLOG_ID,
             requestBody: {
                 title: metadata.seoTitle,
-                content: htmlBody,
+                content: html,
                 labels: [category]
             }
         });
@@ -468,77 +353,75 @@ async function publishToBlogger(content, metadata, images, category, readTime) {
 
 function escapeHtml(str) {
     if (!str) return '';
-    return str
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
+    return str.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
 }
 
 // البوت الرئيسي
 async function startBot() {
     console.log(`\n${'='.repeat(60)}`);
-    console.log(`SEO BOT - 5 ARTICLES FROM RSS SOURCES`);
+    console.log(`SEO BOT - 5 ARTICLES FROM RELIABLE RSS`);
     console.log(`Date: ${new Date().toLocaleString()}`);
-    console.log(`Groq Daily Limit: ${DAILY_TOKEN_LIMIT} tokens`);
     console.log(`${'='.repeat(60)}\n`);
     
     let published = 0;
     
-    for (let i = 0; i < selectedSources.length; i++) {
-        const source = selectedSources[i];
+    for (let i = 0; i < selectedCategories.length; i++) {
+        const category = selectedCategories[i];
+        const feeds = RELIABLE_RSS_FEEDS[category];
         
         console.log(`\n${'-'.repeat(60)}`);
-        console.log(`ARTICLE ${i + 1}/5: ${source.category} (${source.name})`);
+        console.log(`ARTICLE ${i + 1}/5: ${category}`);
         console.log(`${'-'.repeat(60)}\n`);
         
-        const article = await getArticleFromRSS(source);
+        let article = null;
         
-        if (article && article.text.length > 500) {
-            console.log(`   Article found: ${article.title.substring(0, 60)}...`);
-            console.log(`   Images: ${article.images.length}`);
+        // تجربة كل المصادر في الفئة
+        for (const feed of feeds) {
+            console.log(`   Source: ${feed.name}`);
+            article = await getArticleFromFeed(feed.url, category);
             
-            const seoContent = await generateSEORichContent(article, source.category);
-            
-            if (seoContent && seoContent.htmlContent) {
-                const wordCount = seoContent.wordCount || 
-                    seoContent.htmlContent.replace(/<[^>]*>/g, '').split(/\s+/).length;
-                const readTime = Math.max(3, Math.ceil(wordCount / 200));
-                
-                console.log(`   Content: ${wordCount} words`);
-                console.log(`   Publishing...`);
-                
-                const success = await publishToBlogger(
-                    seoContent,
-                    {
-                        seoTitle: seoContent.seoTitle,
-                        metaDescription: seoContent.metaDescription,
-                        urlSlug: seoContent.urlSlug
-                    },
-                    article.images,
-                    source.category,
-                    readTime
-                );
-                
-                if (success) {
-                    published++;
-                    console.log(`   SUCCESS! Published ${published}/5\n`);
-                }
+            if (article) {
+                console.log(`   ✅ Found: ${article.title.substring(0, 60)}...`);
+                console.log(`   Images: ${article.images.length}`);
+                break;
             }
-        } else {
-            console.log(`   No valid article found\n`);
+            await delay(3000);
         }
         
-        if (i < selectedSources.length - 1) {
-            console.log(`   Waiting 30 seconds before next article...`);
-            await delay(30000);
+        if (!article) {
+            console.log(`   ❌ No article found for ${category}`);
+            continue;
+        }
+        
+        const seo = await generateSEO(article, category);
+        
+        if (!seo) {
+            console.log(`   ❌ SEO generation failed`);
+            continue;
+        }
+        
+        const wordCount = seo.wordCount || seo.htmlContent.replace(/<[^>]*>/g, '').split(/\s+/).length;
+        const readTime = Math.max(3, Math.ceil(wordCount / 200));
+        
+        console.log(`   Content: ${wordCount} words`);
+        console.log(`   Publishing...`);
+        
+        const success = await publishPost(seo, seo, article.images, category, readTime);
+        
+        if (success) {
+            published++;
+            console.log(`   ✅ Published ${published}/5`);
+        }
+        
+        if (i < selectedCategories.length - 1) {
+            console.log(`\n   Waiting 45 seconds...`);
+            await delay(45000);
         }
     }
     
     console.log(`\n${'='.repeat(60)}`);
-    console.log(`COMPLETED: ${published}/5 articles published`);
-    console.log(`Total Groq tokens used: ${dailyTokensUsed}/${DAILY_TOKEN_LIMIT}`);
+    console.log(`✅ COMPLETED: ${published}/5 articles published`);
+    console.log(`Tokens used: ${dailyTokensUsed}/${DAILY_TOKEN_LIMIT}`);
     console.log(`${'='.repeat(60)}\n`);
     
     process.exit(0);
