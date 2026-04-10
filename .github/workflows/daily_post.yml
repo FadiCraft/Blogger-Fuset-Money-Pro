@@ -2,8 +2,8 @@ name: Google News Blogger Bot
 
 on:
   schedule:
-    - cron: '0 */4 * * *'
-  workflow_dispatch:
+    - cron: '0 */4 * * *'  # يعمل كل 4 ساعات
+  workflow_dispatch:        # إمكانية التشغيل اليدوي
 
 jobs:
   run-bot:
@@ -19,7 +19,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          npm install rss-parser jsdom @mozilla/readability cheerio googleapis groq-sdk puppeteer puppeteer-extra puppeteer-extra-plugin-stealth
+          npm install rss-parser jsdom @mozilla/readability cheerio googleapis groq-sdk axios
 
       - name: Execution
         env:
