@@ -19,48 +19,66 @@ const groq = new Groq({ apiKey: GROQ_API_KEY });
 const parser = new Parser({ timeout: 30000 });
 const HISTORY_FILE = path.join(__dirname, 'history.json');
 
-// --- نظام منع التكرار (نسخة كاملة وصحيحة) ---
+// --- نظام منع التكرار ---
 function loadHistory() {
     try {
         if (fs.existsSync(HISTORY_FILE)) {
             const data = fs.readFileSync(HISTORY_FILE, 'utf8');
-            // التأكد من أن الملف ليس فارغاً
-            if (!data || data.trim() === '') {
-                return [];
-            }
+            if (!data || data.trim() === '') return [];
             const parsed = JSON.parse(data);
-            // التأكد من أن البيانات عبارة عن مصفوفة
             return Array.isArray(parsed) ? parsed : [];
         }
-        return []; // ✅ هذا هو المهم: إرجاع مصفوفة فارغة إذا لم يوجد الملف
+        return [];
     } catch (error) {
-        console.error('❌ خطأ في قراءة ملف history.json:', error.message);
-        return []; // ✅ إرجاع مصفوفة فارغة في حالة أي خطأ
+        console.error('❌ Error reading history.json:', error.message);
+        return [];
     }
 }
 
 function saveToHistory(url) {
     try {
-        const history = loadHistory(); // الآن مضمون أنها مصفوفة
-        // منع التكرار (فحص إضافي)
+        const history = loadHistory();
         if (!history.includes(url)) {
             history.push(url);
-            // الاحتفاظ بآخر 500 رابط فقط لمنع تضخم الملف
             const trimmedHistory = history.slice(-500);
             fs.writeFileSync(HISTORY_FILE, JSON.stringify(trimmedHistory, null, 2));
-            console.log(`📝 تم الحفظ في السجل: ${url}`);
+            console.log(`📝 Saved to history: ${url}`);
         }
     } catch (error) {
-        console.error('❌ خطأ في حفظ ملف history.json:', error.message);
+        console.error('❌ Error saving to history.json:', error.message);
     }
 }
-// --- المصادر ---
-const RELIABLE_RSS_FEEDS = {
-    "Technology": [{ name: "The Verge", url: "https://www.theverge.com/rss/index.xml" }],
-    "Video Games": [{ name: "IGN", url: "https://feeds.feedburner.com/ign/all" }]
-};
 
-// --- استخراج الصور (مع فلترة محسنة) ---
+// --- دالة تأخير ---
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// --- المصادر RSS ---
+const RELIABLE_RSS_FEEDS = [
+    { 
+        name: "IGN", 
+        category: "Gaming",
+        url: "https://feeds.feedburner.com/ign/all"
+    },
+    { 
+        name: "SammyFans", 
+        category: "Technology",
+        url: "https://www.sammyfans.com/feed/"
+    },
+    { 
+        name: "Forbes Innovation", 
+        category: "Technology",
+        url: "https://www.forbes.com/innovation/feed/"
+    },
+    { 
+        name: "9to5Toys", 
+        category: "Tech Deals",
+        url: "https://9to5toys.com/feed/"
+    }
+];
+
+// --- استخراج الصور ---
 async function extractImages($, url) {
     const images = [];
     const seenUrls = new Set();
@@ -70,7 +88,6 @@ async function extractImages($, url) {
         let src = $(el).attr('src') || $(el).attr('data-src') || $(el).attr('srcset');
         if (!src) return;
         
-        // تنظيف الرابط: أخذ أعلى دقة في srcset إن وجدت
         if (src.includes(',')) {
             const parts = src.split(',');
             let maxRes = { url: '', size: 0 };
@@ -89,7 +106,7 @@ async function extractImages($, url) {
             
             if (!isExcluded && isImage && !seenUrls.has(cleanUrl)) {
                 seenUrls.add(cleanUrl);
-                const alt = $(el).attr('alt') || 'صورة توضيحية للمحتوى التقني';
+                const alt = $(el).attr('alt') || 'Article image';
                 images.push({ url: cleanUrl, alt });
             }
         }
@@ -116,94 +133,104 @@ async function fetchArticleContent(url) {
             url: url,
             title: article.title,
             text: article.textContent.replace(/\s+/g, ' ').slice(0, 12000), 
-            images: images,
-            excerpt: article.excerpt
+            images: images
         };
     } catch (e) {
-        console.error(`❌ فشل جلب المقال: ${url}`);
+        console.error(`❌ Failed to fetch article: ${url}`, e.message);
         return null;
     }
 }
 
-// --- تحسين Prompt الذكاء الاصطناعي (للغة العربية والجودة) ---
-async function generateHighQualityArticle(article, category) {
-    const prompt = `
-أنت محرر تقني محترف ومتخصص في كتابة مقالات عربية شاملة لموقع تقني. 
-**مهمتك:** إعادة كتابة المقال التالي وتحويله إلى مقال عربي احترافي طويل (أكثر من 800 كلمة) وجذاب لمحركات البحث (SEO) وجوجل أدسنس.
+// --- الذكاء الاصطناعي: كتابة محتوى إنجليزي احترافي ---
+async function generateHighQualityArticle(article, category, sourceName) {
+    const prompt = `You are a senior tech journalist and SEO expert. Rewrite the following article into a comprehensive, engaging, and well-structured blog post (800-1000 words) optimized for Google AdSense and search engines.
 
-**الفئة:** ${category}
-**عنوان المصدر:** ${article.title}
-**النص الخام:** ${article.text.substring(0, 7000)}
+Source: ${sourceName}
+Category: ${category}
+Original Title: ${article.title}
+Raw Content: ${article.text.substring(0, 8000)}
 
-**تعليمات صارمة:**
-1. **اللغة:** الانجليزيه السليمة فقط. لا تستخدم العامية أو الركاكة.
-2. **الهيكل:** يجب أن يحتوي على مقدمة مشوقة، وهيكل واضح بعناوين فرعية (H2).
-3. **التنسيق:** أضف فقرة "نظرة سريعة" (Quick Overview) في البداية.
-4. **الإثراء:** أضف رأي خبير أو ملاحظة هامة.
-5. **المصطلحات:** حافظ على المصطلحات التقنية بالإنجليزية بين قوسين إن لزم الأمر (مثل: معالج A17 Pro).
+Strict Guidelines:
+1. Language: Professional, fluent English with proper grammar.
+2. Structure: Include an engaging introduction, 3-4 detailed sections, and a conclusion.
+3. Add a "Quick Overview" box at the beginning.
+4. Include a "Pros and Cons" section.
+5. Add an "Expert Note" or important tip.
+6. Include an FAQ section with 3 common questions.
+7. SEO: Use keyword-rich headings and natural keyword placement.
 
-**أعد الرد بصيغة JSON فقط بدون أي نصوص إضافية خارج الأقواس:**
+Return ONLY a valid JSON object with this exact structure:
+
 {
-    "seoTitle": "عنوان SEO انجليزي جذاب (لا يزيد عن 60 حرف)",
-    "metaDescription": "وصف ميتا انجليزي (140-160 حرف) يشجع على النقر",
-    "introduction": "مقدمة قوية من 3-4 أسطر تشرح أهمية الموضوع.",
+    "seoTitle": "SEO-optimized title (max 60 chars)",
+    "metaDescription": "Compelling meta description (140-160 chars)",
+    "introduction": "Strong, engaging introduction (2-3 paragraphs).",
     "hookBox": {
-        "title": "🔍 نظرة سريعة على الموضوع",
-        "points": ["النقطة الرئيسية 1", "النقطة الرئيسية 2", "النقطة الرئيسية 3"]
+        "title": "🔍 Quick Overview",
+        "points": ["Key point 1", "Key point 2", "Key point 3"]
     },
     "sections": [
         {
-            "heading": "عنوان القسم الأول (H2)",
-            "content": "محتوى غني ومفصل للقسم (150 كلمة على الأقل)."
+            "heading": "First Section Heading",
+            "content": "Detailed, valuable content (150+ words)."
         },
         {
-            "heading": "عنوان القسم الثاني (H2)",
-            "content": "محتوى غني ومفصل للقسم الثاني (150 كلمة على الأقل)."
+            "heading": "Second Section Heading",
+            "content": "Detailed, valuable content (150+ words)."
+        },
+        {
+            "heading": "Third Section Heading",
+            "content": "Detailed, valuable content (150+ words)."
         }
     ],
     "prosCons": {
-        "pros": ["ميزة 1", "ميزة 2", "ميزة 3"],
-        "cons": ["عيب 1", "عيب 2"]
+        "pros": ["Pro 1", "Pro 2", "Pro 3"],
+        "cons": ["Con 1", "Con 2"]
     },
-    "importantNote": "نصيحة خبير أو تحذير مهم للقارئ.",
+    "importantNote": "Expert insight or crucial tip for readers.",
+    "conclusion": "Strong conclusion summarizing the key takeaways.",
     "faqs": [
-        {"q": "سؤال شائع بالعربية؟", "a": "إجابة مفصلة ومفيدة."},
-        {"q": "سؤال شائع آخر؟", "a": "إجابة شاملة."}
+        {"q": "Frequently asked question?", "a": "Detailed and helpful answer."},
+        {"q": "Another common question?", "a": "Comprehensive answer."},
+        {"q": "Third FAQ question?", "a": "Informative response."}
     ]
 }`;
 
     try {
         const completion = await groq.chat.completions.create({
-            messages: [{ role: "user", content: prompt }],
+            messages: [
+                { 
+                    role: "system", 
+                    content: "You are an expert tech journalist and SEO content writer. You write professional, engaging, and well-structured articles in fluent English." 
+                },
+                { role: "user", content: prompt }
+            ],
             model: "llama-3.3-70b-versatile",
-            temperature: 0.6,
+            temperature: 0.7,
             response_format: { type: "json_object" }
         });
         
         const jsonString = completion.choices[0].message.content;
-        // تنظيف أي نصوص زائدة قد يضيفها النموذج أحياناً
         const cleanJson = jsonString.substring(jsonString.indexOf('{'), jsonString.lastIndexOf('}') + 1);
         return JSON.parse(cleanJson);
         
     } catch (e) {
-        console.log("❌ خطأ في تحليل رد الذكاء الاصطناعي:", e.message);
+        console.log("❌ AI Error:", e.message);
         return null;
     }
 }
 
-// --- تصميم قالب HTML احترافي (صور ثابتة الحجم + Schema) ---
-function getTemplate(content, images, sourceUrl) {
-    let mainImage = images[0] || { url: 'https://via.placeholder.com/1200x600/3498db/ffffff?text=Tech+News', alt: 'الصورة الرئيسية' };
+// --- قالب HTML إنجليزي احترافي ---
+function getTemplate(content, images, sourceUrl, sourceName) {
+    let mainImage = images[0] || { url: 'https://via.placeholder.com/1200x600/2c3e50/ffffff?text=Tech+News', alt: 'Featured Image' };
     let remainingImages = images.slice(1);
 
-    // بناء المحتوى مع توزيع الصور (كلها بحجم ثابت)
     let sectionsHtml = '';
     content.sections.forEach((sec, index) => {
         sectionsHtml += `<h2>${escapeHtml(sec.heading)}</h2>`;
         sectionsHtml += `<p>${escapeHtml(sec.content).replace(/\n/g, '<br>')}</p>`;
         
-        // حقن صورة بعد كل قسم إذا توفرت (وليس عشوائياً)
-        if (remainingImages.length > 0) {
+        if (index % 2 === 0 && remainingImages.length > 0) {
             let img = remainingImages.shift();
             sectionsHtml += `
             <figure class="article-figure">
@@ -213,46 +240,42 @@ function getTemplate(content, images, sourceUrl) {
         }
     });
 
-    // بناء Schema.org للمقال
     const schemaData = {
         "@context": "https://schema.org",
         "@type": "TechArticle",
         "headline": content.seoTitle,
         "image": mainImage.url,
         "datePublished": new Date().toISOString().split('T')[0],
-        "author": { "@type": "Organization", "name": "اسم مدونتك التقنية" }
+        "author": { "@type": "Organization", "name": "Tech News Hub" },
+        "inLanguage": "en"
     };
 
     return `
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="${escapeHtml(content.metaDescription)}">
     <title>${escapeHtml(content.seoTitle)}</title>
     
-    <!-- Schema.org Markup (Google Rich Results) -->
     <script type="application/ld+json">
     ${JSON.stringify(schemaData)}
     </script>
     
     <style>
-        /* ========== أساسيات متجاوبة ========== */
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            font-family: 'Tajawal', 'Segoe UI', Tahoma, sans-serif;
-            line-height: 1.9;
-            color: #222;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            line-height: 1.8;
+            color: #1a1a1a;
             font-size: 18px;
             background: #fff;
             padding: 20px;
             max-width: 900px;
             margin: 0 auto;
-            direction: rtl;
         }
         
-        /* ========== تنسيق الصور (الحل السحري للحجم الثابت) ========== */
         .hero-image {
             margin: 25px 0;
             border-radius: 16px;
@@ -275,7 +298,6 @@ function getTemplate(content, images, sourceUrl) {
             border-radius: 12px;
         }
         .article-figure img {
-            /* الحجم الثابت لجميع صور المقال الداخلية */
             width: 100%;
             max-width: 800px;
             height: auto;
@@ -292,7 +314,6 @@ function getTemplate(content, images, sourceUrl) {
             font-style: italic;
         }
         
-        /* ========== عناوين SEO ========== */
         h1 {
             font-size: 2.4rem;
             font-weight: 800;
@@ -309,10 +330,9 @@ function getTemplate(content, images, sourceUrl) {
             padding-bottom: 8px;
         }
         
-        /* ========== صناديق التحسين ========== */
         .hook-box {
             background: linear-gradient(145deg, #f6f9fc 0%, #eef2f6 100%);
-            border-right: 6px solid #e67e22;
+            border-left: 6px solid #e67e22;
             padding: 25px;
             margin: 35px 0;
             border-radius: 12px;
@@ -322,7 +342,7 @@ function getTemplate(content, images, sourceUrl) {
             color: #d35400;
             font-size: 1.5rem;
         }
-        .hook-box ul { padding-right: 20px; }
+        .hook-box ul { padding-left: 20px; }
         .hook-box li { margin-bottom: 12px; font-weight: 500; }
         
         .pros-cons {
@@ -351,6 +371,15 @@ function getTemplate(content, images, sourceUrl) {
             color: #7d4a00;
         }
         
+        .conclusion-box {
+            background: #e8f4fd;
+            border: 1px solid #b6e0fe;
+            padding: 22px;
+            border-radius: 12px;
+            margin: 30px 0;
+            font-size: 1.1rem;
+        }
+        
         .faq-item {
             background: #fff;
             border: 1px solid #e2e8f0;
@@ -377,7 +406,15 @@ function getTemplate(content, images, sourceUrl) {
             border-top: 1px solid #cbd5e1;
         }
         
-        /* ========== تجاوب مع الجوال ========== */
+        .source-footer a {
+            color: #3182ce;
+            text-decoration: none;
+        }
+        
+        .source-footer a:hover {
+            text-decoration: underline;
+        }
+        
         @media (max-width: 600px) {
             body { font-size: 16px; padding: 15px; }
             h1 { font-size: 1.8rem; }
@@ -411,16 +448,18 @@ function getTemplate(content, images, sourceUrl) {
         
         <div class="pros-cons">
             <div class="pros">
-                <h3>✅ المميزات</h3>
+                <h3>✅ Pros</h3>
                 <ul>${content.prosCons.pros.map(p => `<li>${escapeHtml(p)}</li>`).join('')}</ul>
             </div>
             <div class="cons">
-                <h3>❌ العيوب</h3>
+                <h3>❌ Cons</h3>
                 <ul>${content.prosCons.cons.map(c => `<li>${escapeHtml(c)}</li>`).join('')}</ul>
             </div>
         </div>
         
-        <h2>❓ الأسئلة الشائعة (FAQ)</h2>
+        ${content.conclusion ? `<div class="conclusion-box">📌 ${escapeHtml(content.conclusion)}</div>` : ''}
+        
+        <h2>❓ Frequently Asked Questions</h2>
         ${content.faqs.map(faq => `
             <div class="faq-item">
                 <h3>${escapeHtml(faq.q)}</h3>
@@ -429,8 +468,8 @@ function getTemplate(content, images, sourceUrl) {
         `).join('')}
         
         <div class="source-footer">
-            <p>📌 تم تحرير هذا المقال بواسطة فريق التحرير لدينا بناءً على مصادر موثوقة. 
-            <a href="${sourceUrl}" target="_blank" rel="nofollow noopener">المصدر الأصلي للخبر</a>.</p>
+            <p>📌 This article was curated by our editorial team based on reporting from ${sourceName}. 
+            <a href="${sourceUrl}" target="_blank" rel="nofollow noopener">Read the original source</a>.</p>
         </div>
     </article>
 </body>
@@ -444,7 +483,7 @@ function escapeHtml(str) {
     });
 }
 
-// --- النشر على بلوجر (كما هو) ---
+// --- النشر على بلوجر ---
 async function publishPost(content, html, category) {
     try {
         const auth = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET);
@@ -456,47 +495,116 @@ async function publishPost(content, html, category) {
             requestBody: {
                 title: content.seoTitle,
                 content: html,
-                labels: [category],
-                // إضافة وصف ميتا مخصص (Blogger يدعم هذا عبر Custom Meta Tags)
-                customMetaData: `&lt;meta name="description" content="${content.metaDescription}"&gt;`
+                labels: [category]
             }
         });
         return true;
     } catch (e) {
-        console.log(`❌ خطأ في API بلوجر: ${e.message}`);
+        console.log(`❌ Blogger API Error: ${e.message}`);
         if (e.response) console.log(e.response.data);
+        return false;
+    }
+}
+
+// --- معالجة مقال واحد من مصدر معين ---
+async function processArticleFromSource(feed, history) {
+    console.log(`\n📡 Checking: ${feed.name} (${feed.url})`);
+    
+    try {
+        const parsed = await parser.parseURL(feed.url);
+        
+        // أخذ أحدث مقال فقط
+        const latestItem = parsed.items[0];
+        
+        if (!latestItem) {
+            console.log(`⚠️ No articles found in ${feed.name}`);
+            return false;
+        }
+        
+        if (history.includes(latestItem.link)) {
+            console.log(`⏩ Already published from ${feed.name}: ${latestItem.title}`);
+            return false;
+        }
+        
+        console.log(`🆕 New article from ${feed.name}: ${latestItem.title}`);
+        console.log(`🔗 URL: ${latestItem.link}`);
+        
+        // جلب المحتوى
+        const rawArticle = await fetchArticleContent(latestItem.link);
+        if (!rawArticle || rawArticle.images.length === 0) {
+            console.log(`❌ Failed to fetch sufficient content from ${feed.name}`);
+            return false;
+        }
+        
+        console.log(`✅ Fetched ${rawArticle.images.length} images`);
+        console.log(`🤖 Generating high-quality article...`);
+        
+        // كتابة المقال
+        const content = await generateHighQualityArticle(rawArticle, feed.category, feed.name);
+        if (!content) {
+            console.log(`❌ Failed to generate content`);
+            return false;
+        }
+        
+        // إنشاء HTML
+        const html = getTemplate(content, rawArticle.images, latestItem.link, feed.name);
+        
+        // نشر المقال
+        console.log(`📤 Publishing to Blogger...`);
+        const published = await publishPost(content, html, feed.category);
+        
+        if (published) {
+            saveToHistory(latestItem.link);
+            console.log(`✅✅✅ Successfully published from ${feed.name}!`);
+            return true;
+        }
+        
+        return false;
+        
+    } catch (error) {
+        console.error(`❌ Error processing ${feed.name}:`, error.message);
         return false;
     }
 }
 
 // --- البوت الرئيسي ---
 async function startBot() {
-    const history = loadHistory();
-    const category = "Technology";
-    const feeds = RELIABLE_RSS_FEEDS[category];
+    console.log('🚀 Starting Multi-Source Publishing Bot...\n');
     
-    for (const feed of feeds) {
-        const parsed = await parser.parseURL(feed.url);
+    const history = loadHistory();
+    
+    if (!Array.isArray(history)) {
+        console.error('❌ Error in history.json. Reinitializing.');
+        fs.writeFileSync(HISTORY_FILE, '[]');
+    }
+    
+    let publishedCount = 0;
+    
+    // معالجة كل مصدر على حدة
+    for (let i = 0; i < RELIABLE_RSS_FEEDS.length; i++) {
+        const feed = RELIABLE_RSS_FEEDS[i];
         
-        for (const item of parsed.items.slice(0, 1)) { // نشر أول مقال فقط للاختبار
-            if (history.includes(item.link)) continue;
-
-            console.log(`⏳ جاري المعالجة: ${item.title}`);
-            const rawArticle = await fetchArticleContent(item.link);
-            
-            if (rawArticle && rawArticle.images.length > 0) {
-                const content = await generateHighQualityArticle(rawArticle, category);
-                
-                if (content) {
-                    const html = getTemplate(content, rawArticle.images, item.link);
-                    await publishPost(content, html, category);
-                    saveToHistory(item.link);
-                    console.log(`✅ تم النشر بنجاح!`);
-                    process.exit(0);
-                }
-            }
+        console.log(`\n${'='.repeat(50)}`);
+        console.log(`📰 Source (${i + 1}/${RELIABLE_RSS_FEEDS.length}): ${feed.name}`);
+        console.log(`${'='.repeat(50)}`);
+        
+        const success = await processArticleFromSource(feed, history);
+        
+        if (success) {
+            publishedCount++;
+        }
+        
+        // انتظار دقيقة بين كل مصدر وآخر (ما عدا الأخير)
+        if (i < RELIABLE_RSS_FEEDS.length - 1) {
+            console.log(`\n⏳ Waiting 60 seconds before next source...`);
+            await delay(60000);
         }
     }
+    
+    console.log(`\n${'='.repeat(50)}`);
+    console.log(`🏁 Run complete. Published ${publishedCount} new article(s).`);
+    console.log(`${'='.repeat(50)}`);
 }
 
+// بدء التشغيل
 startBot();
