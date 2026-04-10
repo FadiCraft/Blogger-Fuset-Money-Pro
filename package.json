@@ -1,19 +1,18 @@
 {
-  "name": "blogger-auto-publisher",
-  "version": "2.0.0",
-  "description": "Auto publish tech news to Blogger with AI",
+  "name": "blogger-auto-poster",
+  "version": "1.0.0",
+  "description": "Automatic blog poster using Groq AI",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
     "rss-parser": "^3.13.0",
-    "jsdom": "^23.0.0",
+    "jsdom": "^24.0.0",
     "@mozilla/readability": "^0.5.0",
     "cheerio": "^1.0.0-rc.12",
-    "googleapis": "^128.0.0",
+    "googleapis": "^140.0.0",
     "groq-sdk": "^0.5.0",
-    "axios": "^1.6.0",
-    "puppeteer": "^21.0.0"
+    "axios": "^1.6.0"
   }
 }
