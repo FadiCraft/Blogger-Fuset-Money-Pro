@@ -19,7 +19,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          npm install rss-parser jsdom @mozilla/readability cheerio googleapis groq-sdk axios
+          npm install rss-parser jsdom @mozilla/readability cheerio googleapis groq-sdk puppeteer puppeteer-extra puppeteer-extra-plugin-stealth
 
       - name: Execution
         env:
