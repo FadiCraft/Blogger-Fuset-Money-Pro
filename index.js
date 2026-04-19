@@ -13,7 +13,7 @@ const BLOG_ID = process.env.BLOG_ID || "2636919176960128451";
 const CLIENT_ID = process.env.CLIENT_ID || "872415365656-7qribadnc7k2u21kl6jjcbatdueevifh.apps.googleusercontent.com";
 const CLIENT_SECRET = process.env.CLIENT_SECRET || "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";
 const REFRESH_TOKEN = process.env.REFRESH_TOKEN || "1//04yti9k2agPknCgYIARAAGAQSNwF-L9IrTZPKt5Fqbg2vrM9sBtOks9cnY4M7Idg0LToQnlbYGME06k20vcyr_SVmYk1H_yZJdEc";
-const GROQ_API_KEY = process.env.GROQ_API_KEY || "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";
+const GROQ_API_KEY = process.env.GROQ_API_KEY || "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";
 
 const groq = new Groq({ apiKey: GROQ_API_KEY });
 const parser = new Parser({ 
