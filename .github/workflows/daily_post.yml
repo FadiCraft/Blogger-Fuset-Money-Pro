@@ -1,27 +1,28 @@
-name: Blogger Bot
+name: Blogger Bot Automation
 
 on:
   schedule:
-    - cron: '0 */2 * * *'
-  workflow_dispatch:
+    - cron: '0 */2 * * *'  # يعمل كل ساعتين
+  workflow_dispatch:        # زر التشغيل اليدوي
 
 jobs:
-  build:
+  run-bot:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write       # مهم جداً للسماح بحفظ ملف التاريخ
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v3
 
       - name: Setup Node
         uses: actions/setup-node@v3
         with:
           node-version: '18'
 
-      - name: Install Deps
+      - name: Install Dependencies
         run: npm install rss-parser jsdom @mozilla/readability cheerio googleapis axios
 
-      - name: Run
+      - name: Execute Bot
         env:
           BLOG_ID: ${{ secrets.BLOG_ID }}
           CLIENT_ID: ${{ secrets.CLIENT_ID }}
@@ -29,10 +30,10 @@ jobs:
           REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
         run: node index.js
 
-      - name: Commit History
+      - name: Auto Save History
         run: |
-          git config --global user.name "Bot"
+          git config --global user.name "Blogger-Bot"
           git config --global user.email "bot@action.com"
           git add history.json || exit 0
-          git commit -m "Update history" || exit 0
+          git commit -m "Update published history" || exit 0
           git push
