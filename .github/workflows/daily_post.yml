@@ -1,28 +1,27 @@
-name: Google News Blogger Bot
+name: Blogger Bot
 
 on:
   schedule:
-    - cron: '0 */2 * * *'  # يعمل كل ساعتين
-  workflow_dispatch:        # إمكانية التشغيل اليدوي
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
 
 jobs:
-  run-bot:
+  build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write       # ضروري للسماح للبوت بتحديث ملف التاريخ
+      contents: write
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v3
         with:
-          node-version: '20'
+          node-version: '18'
 
-      - name: Install Dependencies
+      - name: Install Deps
         run: npm install rss-parser jsdom @mozilla/readability cheerio googleapis axios
 
-      - name: Execution
+      - name: Run
         env:
           BLOG_ID: ${{ secrets.BLOG_ID }}
           CLIENT_ID: ${{ secrets.CLIENT_ID }}
@@ -30,10 +29,10 @@ jobs:
           REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
         run: node index.js
 
-      - name: Save History
+      - name: Commit History
         run: |
-          git config --global user.name "GitHub Action Bot"
-          git config --global user.email "actions@github.com"
-          git add history.json
-          git commit -m "Update history [skip ci]" || echo "No changes to commit"
+          git config --global user.name "Bot"
+          git config --global user.email "bot@action.com"
+          git add history.json || exit 0
+          git commit -m "Update history" || exit 0
           git push
