@@ -3,26 +3,26 @@ name: Blogger Bot Automation
 on:
   schedule:
     - cron: '0 */2 * * *'  # يعمل كل ساعتين
-  workflow_dispatch:        # زر التشغيل اليدوي
+  workflow_dispatch:        # زر للتشغيل اليدوي من تبويب Actions
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     permissions:
-      contents: write       # مهم جداً للسماح بحفظ ملف التاريخ
+      contents: write       # ضروري جداً للسماح للبوت بحفظ التاريخ في مستودعك
     steps:
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: '22'  # التحديث لنسخة 22 يحل مشكلة ReferenceError: File is not defined
 
       - name: Install Dependencies
         run: npm install rss-parser jsdom @mozilla/readability cheerio googleapis axios
 
-      - name: Execute Bot
+      - name: Execute Bot Script
         env:
           BLOG_ID: ${{ secrets.BLOG_ID }}
           CLIENT_ID: ${{ secrets.CLIENT_ID }}
@@ -30,10 +30,10 @@ jobs:
           REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
         run: node index.js
 
-      - name: Auto Save History
+      - name: Save Publishing History
         run: |
           git config --global user.name "Blogger-Bot"
           git config --global user.email "bot@action.com"
           git add history.json || exit 0
-          git commit -m "Update published history" || exit 0
+          git commit -m "Update history.json [skip ci]" || exit 0
           git push
