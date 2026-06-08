@@ -4,6 +4,7 @@ const { Readability } = require('@mozilla/readability');
 const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 
 // المتغيرات الأساسية
 const BLOG_ID = process.env.BLOG_ID || "2636919176960128451";
@@ -11,13 +12,26 @@ const CLIENT_ID = process.env.CLIENT_ID || "872415365656-7qribadnc7k2u21kl6jjcba
 const CLIENT_SECRET = process.env.CLIENT_SECRET || "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";
 const REFRESH_TOKEN = process.env.REFRESH_TOKEN || "1//046k2RWLveK4KCgYIARAAGAQSNwF-L9IrYJWfeeIkjStq18W7y0hun58uQ5ZaRwT3NP_feh7hE-LLRIg5RZ9-jDJqryVNN6fVhyU";
 
-const parser = new Parser({ timeout: 30000 });
+// إعدادات البروكسي (يتم جلب الرابط من GitHub Secrets)
+const PROXY_URL = process.env.PROXY_URL; // مثال: http://user:pass@ip:port
+const proxyAgent = PROXY_URL ? new HttpsProxyAgent(PROXY_URL) : null;
+
+// إعداد الـ Parser ليدعم البروكسي عند جلب الـ RSS
+const parser = new Parser({
+    timeout: 30000,
+    requestOptions: proxyAgent ? { agent: proxyAgent } : {}
+});
+
 const HISTORY_FILE = path.join(__dirname, 'history.json');
 
+// المصادر الجديدة مقسمة حسب طلبك من موقع SammyFans
+// ملاحظة: تم تحويل روابط الأقسام إلى خلاصة RSS المتوافقة مع الـ WordPress الخاص بالموقع لضمان استخراج دقيق وسريع ومستقر.
 const FEEDS = [
-    { name: "IGN", category: "Gaming", url: "https://feeds.feedburner.com/ign/all" },
-    { name: "9to5Toys", category: "Deals", url: "https://9to5toys.com/feed/" },
-    { name: "SammyFans", category: "Tech", url: "https://www.sammyfans.com/feed/" }
+    { name: "SammyFans News", category: "News", url: "https://www.sammyfans.com/category/news/feed/" },
+    { name: "SammyFans Phones", category: "Phones", url: "https://www.sammyfans.com/category/phones/feed/" },
+    { name: "SammyFans Updates", category: "Updates", url: "https://www.sammyfans.com/category/updates/feed/" },
+    { name: "SammyFans Android", category: "Android", url: "https://www.sammyfans.com/search/android/feed/rss2/" }, // تم ضبطها كخلاصة بحث
+    { name: "SammyFans Tips", category: "Tips", url: "https://www.sammyfans.com/category/tips/feed/" }
 ];
 
 function getHistory() {
@@ -28,7 +42,13 @@ function getHistory() {
 }
 
 async function start() {
-    console.log("🚀 Starting Blogger Bot...");
+    console.log("🚀 Starting Blogger Bot with Proxy Support...");
+
+    if (proxyAgent) {
+        console.log("🔒 Proxy configurations loaded successfully.");
+    } else {
+        console.log("⚠️ Warning: No Proxy URL found, running with direct connection.");
+    }
 
     if (!BLOG_ID || !REFRESH_TOKEN) {
         console.error("❌ Missing Secrets!");
@@ -42,29 +62,33 @@ async function start() {
 
     for (const feed of FEEDS) {
         try {
-            console.log(`\n📡 Checking ${feed.name}...`);
+            console.log(`\n📡 Checking Section [${feed.category}] via ${feed.name}...`);
             const data = await parser.parseURL(feed.url);
             const item = data.items[0];
 
             if (!item || history.includes(item.link)) {
-                console.log("⏩ Skip: Already published.");
+                console.log("⏩ Skip: Already published or empty feed.");
                 continue;
             }
 
-            console.log(`📰 Processing: ${item.title}`);
+            console.log(`📰 Processing Article: ${item.title}`);
             
-            // استخدام fetch المدمج في Node 22 لتجاوز الحماية
-            const response = await fetch(item.link, {
+            // إعداد خيارات طلب الـ fetch مع دعم البروكسي لـ Node 22
+            const fetchOptions = {
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
                     'Accept-Language': 'en-US,en;q=0.5',
-                    'Sec-Fetch-Dest': 'document',
-                    'Sec-Fetch-Mode': 'navigate',
-                    'Sec-Fetch-Site': 'none',
                     'Cache-Control': 'max-age=0'
                 }
-            });
+            };
+
+            // في Node 22، لتمرير البروكسي للـ fetch المدمج نستخدم الـ agent من مكتبة https-proxy-agent
+            if (proxyAgent) {
+                fetchOptions.agent = proxyAgent;
+            }
+
+            const response = await fetch(item.link, fetchOptions);
 
             if (!response.ok) throw new Error(`HTTP Error! Status: ${response.status}`);
             const htmlText = await response.text();
@@ -84,11 +108,12 @@ async function start() {
 
                 history.push(item.link);
                 fs.writeFileSync(HISTORY_FILE, JSON.stringify(history.slice(-500), null, 2));
-                console.log("✅ Published successfully!");
+                console.log(`✅ [${feed.category}] Published successfully!`);
             }
         } catch (err) {
             console.error(`❌ Error with ${feed.name}: ${err.message}`);
         }
+        // انتظار لمدة 5 ثوانٍ بين الأقسام لتفادي الـ Rate Limit
         await new Promise(r => setTimeout(r, 5000));
     }
 }
