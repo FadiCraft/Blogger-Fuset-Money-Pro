@@ -10,6 +10,7 @@ const REFRESH_TOKEN = process.env.REFRESH_TOKEN || "1//046k2RWLveK4KCgYIARAAGAQS
 
 const HISTORY_FILE = path.join(__dirname, 'history.json');
 
+// مصفوفة البروكسيات المباشرة
 const PROXIES = [
   'https://corsproxy.io/?',
   'https://api.codetabs.com/v1/proxy?quest=',
@@ -20,12 +21,13 @@ const PROXIES = [
   'https://jsonp.afeld.me/?url='
 ];
 
+// الأقسام محولة بالكامل إلى خلاصات RSS الخاصة بـ WordPress لضمان الاستخراج
 const SECTIONS = [
-    { category: "News", url: "https://www.sammyfans.com/category/news/" },
-    { category: "Phones", url: "https://www.sammyfans.com/category/phones/" },
-    { category: "Updates", url: "https://www.sammyfans.com/category/updates/" },
-    { category: "Android", url: "https://www.sammyfans.com/?s=android" },
-    { category: "Tips", url: "https://www.sammyfans.com/category/tips/" }
+    { category: "News", url: "https://www.sammyfans.com/category/news/feed/" },
+    { category: "Phones", url: "https://www.sammyfans.com/category/phones/feed/" },
+    { category: "Updates", url: "https://www.sammyfans.com/category/updates/feed/" },
+    { category: "Android", url: "https://www.sammyfans.com/search/android/feed/rss2/" },
+    { category: "Tips", url: "https://www.sammyfans.com/category/tips/feed/" }
 ];
 
 function getHistory() {
@@ -35,6 +37,7 @@ function getHistory() {
     return [];
 }
 
+// دالة جلب النص الخام (XML أو HTML) عبر البروكسيات المتعددة
 async function fetchWithFallback(targetUrl) {
     let lastError = null;
     for (const proxyBase of PROXIES) {
@@ -60,7 +63,7 @@ async function fetchWithFallback(targetUrl) {
 }
 
 async function start() {
-    console.log("🚀 Starting Blogger Bot Diagnostics...");
+    console.log("🚀 Starting Blogger Bot (RSS + Proxy Hybrid Mode)...");
     const history = getHistory();
     console.log(`📊 Current History Items Count: ${history.length}`);
 
@@ -70,25 +73,30 @@ async function start() {
 
     for (const section of SECTIONS) {
         try {
-            console.log(`\n📡 Scraping Section [${section.category}]...`);
-            const sectionHtml = await fetchWithFallback(section.url);
-            const sectionDom = new JSDOM(sectionHtml);
-            const doc = sectionDom.window.document;
-
-            const storyElements = doc.querySelectorAll('li.mvp-blog-story-wrap');
-            console.log(`🔍 Found ${storyElements.length} article elements on page HTML`);
+            console.log(`\n📡 Scraping Section [${section.category}] via RSS XML...`);
+            const xmlText = await fetchWithFallback(section.url);
+            
+            // قراءة الـ XML المستخرج باستخدام JSDOM لسهولة الفلترة بدون مكتبات إضافية
+            const xmlDom = new JSDOM(xmlText, { contentType: "text/xml" });
+            const doc = xmlDom.window.document;
+            const items = doc.querySelectorAll('item');
+            
+            console.log(`🔍 Found ${items.length} raw articles in RSS XML Feed`);
 
             let targetArticleLink = null;
+            let targetArticleTitle = null;
 
-            for (const el of storyElements) {
-                const anchor = el.querySelector('a');
-                if (anchor) {
-                    let link = anchor.getAttribute('href');
-                    console.log(`🔗 Extracted link from HTML: "${link}"`); // طبع الرابط للفحص
-
-                    if (link && !history.includes(link)) {
+            for (const item of items) {
+                // استخراج الرابط النظيف للمقالة من تاغ <link> أو <guid>
+                let link = item.querySelector('link')?.textContent || item.querySelector('guid')?.textContent;
+                let title = item.querySelector('title')?.textContent;
+                
+                if (link) {
+                    link = link.trim();
+                    if (!history.includes(link)) {
                         targetArticleLink = link;
-                        break; 
+                        targetArticleTitle = title ? title.trim() : "New Post";
+                        break;
                     }
                 }
             }
@@ -98,20 +106,24 @@ async function start() {
                 continue;
             }
 
-            console.log(`🎯 Processing target link: ${targetArticleLink}`);
+            console.log(`🎯 Found New Article! Title: "${targetArticleTitle}"`);
+            console.log(`🔗 Link: ${targetArticleLink}`);
+
+            // جلب صفحة المقال الكاملة لاستخراج الصور والمحتوى المنظف
             const articleHtml = await fetchWithFallback(targetArticleLink);
             const articleDom = new JSDOM(articleHtml);
             const articleDoc = articleDom.window.document;
 
-            const metaTitle = articleDoc.querySelector('meta[property="og:title"]')?.getAttribute('content');
+            const metaTitle = articleDoc.querySelector('meta[property="og:title"]')?.getAttribute('content') || targetArticleTitle;
             const metaImage = articleDoc.querySelector('meta[property="og:image"]')?.getAttribute('content');
             const contentContainer = articleDoc.querySelector('#mvp-content-main');
 
             if (!contentContainer) {
-                console.log("⚠️ Could not find article body container.");
+                console.log("⚠️ Could not find article body container. Skipping content extraction.");
                 continue;
             }
 
+            // تنظيف الإعلانات تماماً
             const ads = contentContainer.querySelectorAll('.mvp-post-ad-wrap, script, ins, .adsbygoogle, img[src*="google_preferred_source_badge"]');
             ads.forEach(ad => ad.remove());
 
@@ -124,17 +136,17 @@ async function start() {
                 if (tagText && !labels.includes(tagText)) labels.push(tagText);
             });
 
-            const titleToPublish = metaTitle || "New Update";
-            let finalBloggerContent = `<div style="font-family: Arial; line-height: 1.8;">`;
+            let finalBloggerContent = `<div style="font-family: Arial, sans-serif; line-height: 1.8; color: #333;">`;
             if (metaImage) {
-                finalBloggerContent += `<div style="text-align: center;"><img src="${metaImage}" style="max-width:100%;"/></div>`;
+                finalBloggerContent += `<div style="text-align: center; margin-bottom: 20px;"><img src="${metaImage}" style="max-width:100%; height:auto; border-radius:8px;" alt="${metaTitle}"/></div>`;
             }
-            finalBloggerContent += `${cleanContentHtml}</div>`;
+            finalBloggerContent += `${cleanContentHtml}`;
+            finalBloggerContent += `<hr style="border:0; border-top:1px solid #eee; margin-top:30px;"><p style="font-size:13px; color:#777;">Source: <a href="${targetArticleLink}" target="_blank">SammyFans</a></p></div>`;
 
-            console.log(`📝 Publishing to Blogger: "${titleToPublish}"`);
+            console.log(`📝 Publishing to Blogger: "${metaTitle}"`);
             await blogger.posts.insert({
                 blogId: BLOG_ID,
-                requestBody: { title: titleToPublish, content: finalBloggerContent, labels: labels }
+                requestBody: { title: metaTitle, content: finalBloggerContent, labels: labels }
             });
 
             history.push(targetArticleLink);
