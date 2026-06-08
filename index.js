@@ -2,6 +2,7 @@ const { JSDOM } = require('jsdom');
 const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
+const { HttpsProxyAgent } = require('https-proxy-agent'); // تأكد من وجودها في ملف الـ yaml
 
 // المتغيرات الأساسية
 const BLOG_ID = process.env.BLOG_ID || "2636919176960128451";
@@ -9,11 +10,12 @@ const CLIENT_ID = process.env.CLIENT_ID || "872415365656-7qribadnc7k2u21kl6jjcba
 const CLIENT_SECRET = process.env.CLIENT_SECRET || "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";
 const REFRESH_TOKEN = process.env.REFRESH_TOKEN || "1//046k2RWLveK4KCgYIARAAGAQSNwF-L9IrYJWfeeIkjStq18W7y0hun58uQ5ZaRwT3NP_feh7hE-LLRIg5RZ9-jDJqryVNN6fVhyU";
 
-// البروكسي المطلوب لتجاوز الـ 403
-const PROXY_BASE = "http://api.codetabs.com/v1/proxy/?quest=";
+// جلب البروكسي الحقيقي الخاص بك من الـ GitHub Secrets
+const PROXY_URL = process.env.PROXY_URL; 
+const proxyAgent = PROXY_URL ? new HttpsProxyAgent(PROXY_URL) : null;
+
 const HISTORY_FILE = path.join(__dirname, 'history.json');
 
-// الأقسام المطلوبة من موقع SammyFans مباشرة
 const SECTIONS = [
     { category: "News", url: "https://www.sammyfans.com/category/news/" },
     { category: "Phones", url: "https://www.sammyfans.com/category/phones/" },
@@ -29,20 +31,35 @@ function getHistory() {
     return [];
 }
 
-// دالة مساعدة لجلب الـ HTML عبر البروكسي مع معالجة الأخطاء
-async function fetchViaProxy(targetUrl) {
-    const proxyUrl = `${PROXY_BASE}${encodeURIComponent(targetUrl)}`;
-    const response = await fetch(proxyUrl, {
+// دالة الجلب الذكية المعتمدة على البروكسي الشخصي المستقر
+async function fetchPage(targetUrl) {
+    const fetchOptions = {
+        method: 'GET',
         headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5'
         }
-    });
-    if (!response.ok) throw new Error(`Proxy failed with status: ${response.status}`);
+    };
+
+    // إذا تم توفير البروكسي، نمرره فوراً للطلب لتفادي الـ 403 والـ 522
+    if (proxyAgent) {
+        fetchOptions.agent = proxyAgent;
+    }
+
+    const response = await fetch(targetUrl, fetchOptions);
+    if (!response.ok) throw new Error(`Fetch failed with status: ${response.status}`);
     return await response.text();
 }
 
 async function start() {
-    console.log("🚀 Starting Blogger Bot with CodeTabs Proxy Scraper...");
+    console.log("🚀 Starting Blogger Bot with Premium Proxy Support...");
+    
+    if (proxyAgent) {
+        console.log("🔒 Secured connection established via Private Proxy.");
+    } else {
+        console.log("⚠️ Warning: No PROXY_URL secret found. Using direct connection.");
+    }
 
     if (!BLOG_ID || !REFRESH_TOKEN) {
         console.error("❌ Missing Secrets!");
@@ -58,23 +75,20 @@ async function start() {
         try {
             console.log(`\n📡 Scraping Section [${section.category}]...`);
             
-            // 1. جلب هيكل صفحة القسم الرئيسية
-            const sectionHtml = await fetchViaProxy(section.url);
+            const sectionHtml = await fetchPage(section.url);
             const sectionDom = new JSDOM(sectionHtml);
             const doc = sectionDom.window.document;
 
-            // استهداف عناصر المقالات بناءً على الـ Structure الخاص بالموقع
             const storyElements = doc.querySelectorAll('li.mvp-blog-story-wrap');
             let targetArticleLink = null;
 
-            // البحث عن أول مقال في القسم لم يتم نشره مسبقاً
             for (const el of storyElements) {
                 const anchor = el.querySelector('a');
                 if (anchor) {
                     const link = anchor.getAttribute('href');
                     if (link && !history.includes(link)) {
                         targetArticleLink = link;
-                        break; // وجدنا مقالاً جديداً، نكتفي به لهذا القسم
+                        break; 
                     }
                 }
             }
@@ -86,16 +100,12 @@ async function start() {
 
             console.log(`🔗 Found new article link: ${targetArticleLink}`);
 
-            // 2. جلب صفحة المقال الكاملة عبر البروكسي
-            const articleHtml = await fetchViaProxy(targetArticleLink);
+            const articleHtml = await fetchPage(targetArticleLink);
             const articleDom = new JSDOM(articleHtml);
             const articleDoc = articleDom.window.document;
 
-            // استخراج العنوان والصورة الرئيسية من الـ Meta Tags لضمان الجودة
             const metaTitle = articleDoc.querySelector('meta[property="og:title"]')?.getAttribute('content');
             const metaImage = articleDoc.querySelector('meta[property="og:image"]')?.getAttribute('content');
-            
-            // استهداف حاوية المحتوى الأساسية
             const contentContainer = articleDoc.querySelector('#mvp-content-main');
 
             if (!contentContainer) {
@@ -103,15 +113,13 @@ async function start() {
                 continue;
             }
 
-            // تنظيف المحتوى من الإعلانات وعناصر جوجل غير المرغوبة قبل استخراج الـ HTML
             const ads = contentContainer.querySelectorAll('.mvp-post-ad-wrap, script, ins, .adsbygoogle, img[src*="google_preferred_source_badge"]');
             ads.forEach(ad => ad.remove());
 
             const cleanContentHtml = contentContainer.innerHTML.trim();
 
-            // استخراج الكلمات المفتاحية (Tags) لإضافتها كـ Labels في بلوجر
             const tagElements = articleDoc.querySelectorAll('.mvp-post-tags itemprop[keywords] a, .mvp-post-tags a');
-            const labels = [section.category]; // الوسم الأساسي هو اسم القسم نفسه
+            const labels = [section.category]; 
             
             tagElements.forEach(tag => {
                 const tagText = tag.textContent.trim();
@@ -120,7 +128,6 @@ async function start() {
                 }
             });
 
-            // تجهيز المحتوى النهائي لمدونة بلوجر بشكل مرتب (الصورة البارزة في الأعلى ثم النص)
             const titleToPublish = metaTitle || "New Update";
             let finalBloggerContent = `<div style="font-family: Arial, sans-serif; line-height: 1.8; color: #333;">`;
             
@@ -131,8 +138,7 @@ async function start() {
             finalBloggerContent += `${cleanContentHtml}`;
             finalBloggerContent += `<hr style="border: 0; border-top: 1px solid #eee; margin-top: 30px;"><p style="font-size: 13px; color: #777;">Source: <a href="${targetArticleLink}" target="_blank">SammyFans</a></p></div>`;
 
-            // 3. النشر على بلوجر
-            console.log(`📝 Publishing: "${titleToPublish}" with ${labels.length} labels.`);
+            console.log(`📝 Publishing: "${titleToPublish}"`);
             
             await blogger.posts.insert({
                 blogId: BLOG_ID,
@@ -143,7 +149,6 @@ async function start() {
                 }
             });
 
-            // حفظ الرابط في الهيستوري لمنع التكرار مستقبلاً
             history.push(targetArticleLink);
             fs.writeFileSync(HISTORY_FILE, JSON.stringify(history.slice(-500), null, 2));
             console.log(`✅ [${section.category}] Published successfully!`);
@@ -152,7 +157,6 @@ async function start() {
             console.error(`❌ Error in section [${section.category}]: ${err.message}`);
         }
         
-        // انتظام خفيف بانتظار 5 ثوانٍ بين الأقسام لحماية الـ IP الخاص بالبروكسي المجاني
         await new Promise(r => setTimeout(r, 5000));
     }
 }
