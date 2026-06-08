@@ -2,25 +2,29 @@ name: Blogger Bot Automation
 
 on:
   schedule:
-    - cron: '0 */2 * * *'  # يعمل كل ساعتين
+    - cron: '0 */2 * * *'  # يعمل كل ساعتين تلقائياً
   workflow_dispatch:        # زر للتشغيل اليدوي من تبويب Actions
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     permissions:
-      contents: write       # ضروري جداً للسماح للبوت بحفظ التاريخ في مستودعك
+      contents: write       # ضروري جداً للسماح للبوت بعمل Push لملف الهيستوري
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
+        with:
+          persist-credentials: true # تضمن بقاء صلاحيات الـ Push الفردية مفعّلة
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '22'  # التحديث لنسخة 22 يحل مشكلة ReferenceError: File is not defined
+          node-version: '22'
 
       - name: Install Dependencies
-        run: npm install rss-parser jsdom @mozilla/readability cheerio googleapis axios
+        # تم تحديث المكتبات لتطابق الكود الجديد تماماً (إضافة الـ proxy وحذف غير المستخدم)
+        run: npm install jsdom googleapis https-proxy-agent
 
       - name: Execute Bot Script
         env:
@@ -32,8 +36,14 @@ jobs:
 
       - name: Save Publishing History
         run: |
-          git config --global user.name "Blogger-Bot"
-          git config --global user.email "bot@action.com"
-          git add history.json || exit 0
-          git commit -m "Update history.json [skip ci]" || exit 0
-          git push
+          git config --global user.name "GitHub Actions Bot"
+          git config --global user.email "actions@github.com"
+          
+          # التحقق من وجود الملف أو التعديلات قبل الـ Commit تجنباً للأخطاء
+          if [ -f history.json ]; then
+            git add history.json
+            git commit -m "Update history.json [skip ci]" || echo "No changes to commit"
+            git push origin HEAD:${{ github.ref }} || echo "Push failed or nothing to push"
+          else
+            echo "history.json not found, skipping git push."
+          fi
