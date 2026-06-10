@@ -1,49 +1,46 @@
-name: Blogger Bot Automation
+name: نشر يومي تلقائي
 
 on:
   schedule:
-    - cron: '0 */2 * * *'  # يعمل كل ساعتين تلقائياً
-  workflow_dispatch:        # زر للتشغيل اليدوي من تبويب Actions
+    # ينشر كل 10 دقيقة
+    - cron: '*/10 * * * *'
+  workflow_dispatch:  # للتشغيل اليدوي
+  push:
+    branches: [ main ]
 
 jobs:
-  run-bot:
+  publish:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write       # ضروري جداً للسماح للبوت بعمل Push لملف الهيستوري
-
+    
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-        with:
-          persist-credentials: true # تضمن بقاء صلاحيات الـ Push الفردية مفعّلة
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '22'
-
-      - name: Install Dependencies
-        # تم تحديث المكتبات لتطابق الكود الجديد تماماً (إضافة الـ proxy وحذف غير المستخدم)
-        run: npm install jsdom googleapis https-proxy-agent
-
-      - name: Execute Bot Script
-        env:
-          BLOG_ID: ${{ secrets.BLOG_ID }}
-          CLIENT_ID: ${{ secrets.CLIENT_ID }}
-          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-          REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
-        run: node index.js
-
-      - name: Save Publishing History
-        run: |
-          git config --global user.name "GitHub Actions Bot"
-          git config --global user.email "actions@github.com"
+    - name: تحميل المستودع
+      uses: actions/checkout@v4
+      
+    - name: إعداد Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        
+    - name: تثبيت الحزم
+      run: |
+        npm init -y
+        npm install axios cheerio fs-extra
+        
+    - name: تشغيل النشر
+      run: node index.js
+      
+    - name: حفظ الحالة
+      uses: actions/upload-artifact@v4
+      with:
+        name: published-state
+        path: |
+          state.json
+          posts/*.html
           
-          # التحقق من وجود الملف أو التعديلات قبل الـ Commit تجنباً للأخطاء
-          if [ -f history.json ]; then
-            git add history.json
-            git commit -m "Update history.json [skip ci]" || echo "No changes to commit"
-            git push origin HEAD:${{ github.ref }} || echo "Push failed or nothing to push"
-          else
-            echo "history.json not found, skipping git push."
-          fi
+    - name: تحديث المستودع
+      run: |
+        git config user.name "github-actions"
+        git config user.email "actions@github.com"
+        git add state.json posts/
+        git commit -m "نشر تلقائي: $(date)" || exit 0
+        git push
