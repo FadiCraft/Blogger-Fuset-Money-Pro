@@ -2,19 +2,19 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const fs = require('fs-extra');
 
-// ===== إعدادات Blogger =====
+// ===== إعدادات Blogger المتوافقة مع الـ Secrets والـ Environment Variables =====
 const BLOGGER_CONFIG = {
-    blogId: '2725115584838237159',
-    clientId: '1022254688087-6bj9eij12uuh5u2apm300hg0rl3v3u5i.apps.googleusercontent.com',
-    clientSecret: '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',
-    refreshToken: '1//046k2RWLveK4KCgYIARAAGAQSNwF-L9IrYJWfeeIkjStq18W7y0hun58uQ5ZaRwT3NP_feh7hE-LLRIg5RZ9-jDJqryVNN6fVhyU'
+    blogId: process.env.BLOG_ID || "2725115584838237159",
+    clientId: process.env.CLIENT_ID || "1022254688087-6bj9eij12uuh5u2apm300hg0rl3v3u5i.apps.googleusercontent.com",
+    clientSecret: process.env.CLIENT_SECRET || "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",
+    refreshToken: process.env.REFRESH_TOKEN || "1//04npcWG7RN3UwCgYIARAAGAQSNwF-L9IrrQTVgQCZ0m7WdslFX1lpUIZRy3ODYu70BImi5mYfMUQ8RvKaIPyi3Uhu7esth8aeVro",
 };
 
-// ===== الإعدادات العامة الجديدة للتقنية =====
+// ===== الإعدادات العامة للمشروع =====
 const SETTINGS = {
     targetUrl: 'https://www.gsmarena.com/reviews.php3',
     baseUrl: 'https://www.gsmarena.com',
-    stateFile: 'state.json', // تم إرجاعه لـ state.json ليطابق ملف الـ YAML في الجيت هاب
+    stateFile: 'state.json', // متوافق تماماً مع الـ Workflow الخاص بك
     siteName: 'KiroZozo Tech',
     siteUrl: 'https://www.kirozozo.xyz/'
 };
@@ -52,7 +52,7 @@ class TechPublisher {
         return res.data;
     }
 
-    // دالة استخراج محتوى المقال الداخلي بالكامل (نصوص وصور ومواصفات)
+    // دالة استخراج محتوى المقال الداخلي وإصلاح الصور بمكتبة Cheerio
     async extractArticleBody(articleUrl) {
         try {
             console.log(`🔍 Fetching article details from: ${articleUrl}`);
@@ -62,10 +62,10 @@ class TechPublisher {
             const $body = $('#review-body');
             if (!$body.length) return null;
 
-            // تنظيف العناصر غير المرغوبة داخل المقال مثل أزرار المقارنة التلقائية
+            // تنظيف العناصر غير المرغوبة
             $body.find('.multipic-select-images-button, script, .ad-container, .comments-link').remove();
 
-            // إصلاح روابط الصور الداخلية وتعديل الخصائص بشكل صحيح
+            // إصلاح روابط الصور وإزالة الأبعاد المتعارضة
             $body.find('img').each((i, img) => {
                 let src = $(img).attr('src');
                 if (src && !src.startsWith('http')) {
@@ -76,7 +76,7 @@ class TechPublisher {
                     }
                 }
                 
-                // التعديل الصحيح والمضمون هنا لعدم حدوث توقف في مكتبة Cheerio
+                // استخدام الميثود الصحيح المتوافق مع Cheerio لمنع توقف السكريبت
                 $(img).addClass('article-inline-img');
                 $(img).removeAttr('width');
                 $(img).removeAttr('height');
@@ -111,11 +111,9 @@ class TechPublisher {
             }
         });
 
-        // تصفية المقالات لاستخراج غير المنشور فقط
         const unpublished = articles.filter(art => !this.state.published.includes(art.link));
         console.log(`📊 Found ${articles.length} articles, ${unpublished.length} are new.`);
         
-        // إرجاع أول مقال جديد (الأحدث زمنيّاً)
         return unpublished.length > 0 ? unpublished[0] : null;
     }
 
@@ -142,15 +140,12 @@ class TechPublisher {
     
     .main-cover { width: 100%; border-radius: 8px; margin-bottom: 30px; object-fit: cover; max-height: 400px; }
     
-    /* تنسيق محتوى المقال المستخرج */
     .review-body { font-size: 17px; color: #333; }
     .review-body h3 { font-family: 'Playfair Display', serif; font-size: 26px; color: var(--primary); margin: 35px 0 15px 0; border-left: 4px solid var(--accent); padding-left: 12px; }
     .review-body p { margin-bottom: 22px; text-align: justify; }
     
-    /* تنسيق الصور الداخلية المجلوبة */
     .article-inline-img { display: block; max-width: 100%; height: auto; margin: 30px auto; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
     
-    /* تنسيق قائمة المواصفات التقنية المميزة من GSMArena */
     .article-blurb-findings { background: var(--gray); padding: 25px; border-radius: 8px; list-style: none; margin: 25px 0; border-top: 3px solid var(--primary); }
     .article-blurb-findings li { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #e5e5e7; font-size: 15px; }
     .article-blurb-findings li:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
@@ -205,11 +200,13 @@ class TechPublisher {
         }
     }
 
+    // دالة النشر المصححة لتجنب الـ Permission Denied
     async publishToBlogger(article, postContent) {
         try {
             const accessToken = await this.getAccessToken();
+            
+            // الهيكلية الرسمية والنظيفة لطلب النشر بدون حقول زائدة تعترضها جوجل
             const postData = {
-                kind: 'blogger#post',
                 title: `🔥 ${article.title}`,
                 content: postContent,
                 labels: ['Tech Reviews', 'Gadgets', 'GSMArena', 'Smartphones']
@@ -218,12 +215,17 @@ class TechPublisher {
             const response = await axios.post(
                 `https://www.googleapis.com/blogger/v3/blogs/${BLOGGER_CONFIG.blogId}/posts/`,
                 postData,
-                { headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' } }
+                { 
+                    headers: { 
+                        'Authorization': `Bearer ${accessToken}`, 
+                        'Content-Type': 'application/json' 
+                    } 
+                }
             );
 
             return { success: true, url: response.data.url };
         } catch (error) {
-            console.error('❌ Blogger API Error:', error.response?.data || error.message);
+            console.error('❌ Blogger API Error:', error.response?.data?.error || error.message);
             return { success: false, error: error.message };
         }
     }
@@ -231,7 +233,6 @@ class TechPublisher {
     async run() {
         console.log('\n🚀 Starting Tech Auto-Publisher Engine...');
         try {
-            // 1. جلب المقال الأحدث غير المنشور
             const article = await this.getLatestUnpublishedArticle();
             
             if (!article) {
@@ -241,24 +242,20 @@ class TechPublisher {
 
             console.log(`🎯 New Article Detected: "${article.title}"`);
 
-            // 2. استخراج كامل محتوى المقال
             const bodyHtml = await this.extractArticleBody(article.link);
             if (!bodyHtml) {
                 console.log('⚠️ Could not extract content for this article. Skipping...');
                 return;
             }
 
-            // 3. بناء قالب HTML المتوافق مع المحتوى الإنجليزي والأجهزة
             const finalHtml = this.generatePostHtml(article, bodyHtml);
 
-            // 4. النشر على بلوجر لقيد مقال واحد
             console.log('📤 Uploading to Blogger...');
             const result = await this.publishToBlogger(article, finalHtml);
 
             if (result.success) {
                 console.log(`✅ Success! Published to: ${result.url}`);
                 
-                // حفظ الرابط لمنع التكرار نهائياً
                 this.state.published.push(article.link);
                 this.state.lastDate = new Date().toISOString();
                 this.state.totalPublished += 1;
@@ -273,5 +270,5 @@ class TechPublisher {
     }
 }
 
-// تشغيل محرك النشر
+// تشغيل الأداة تلقائياً
 new TechPublisher().run();
