@@ -14,8 +14,7 @@ const BLOGGER_CONFIG = {
 const SETTINGS = {
     targetUrl: 'https://www.gsmarena.com/reviews.php3',
     baseUrl: 'https://www.gsmarena.com',
-    stateFile: 'tech_state.json',
-    postsDir: 'tech_posts',
+    stateFile: 'state.json', // تم إرجاعه لـ state.json ليطابق ملف الـ YAML في الجيت هاب
     siteName: 'KiroZozo Tech',
     siteUrl: 'https://www.kirozozo.xyz/'
 };
@@ -63,10 +62,10 @@ class TechPublisher {
             const $body = $('#review-body');
             if (!$body.length) return null;
 
-            // تنظيف العناصر غير المرغوبة داخل المقال مثل أزرار المقارنة التلقائية لـ GSMArena
-            $body.find('.multipic-select-images-button, script, .ad-container').remove();
+            // تنظيف العناصر غير المرغوبة داخل المقال مثل أزرار المقارنة التلقائية
+            $body.find('.multipic-select-images-button, script, .ad-container, .comments-link').remove();
 
-            // إصلاح روابط الصور الداخلية لتصبح روابط كاملة المطلقة
+            // إصلاح روابط الصور الداخلية وتعديل الخصائص بشكل صحيح
             $body.find('img').each((i, img) => {
                 let src = $(img).attr('src');
                 if (src && !src.startsWith('http')) {
@@ -76,8 +75,11 @@ class TechPublisher {
                         $(img).attr('src', SETTINGS.baseUrl + (src.startsWith('/') ? src : '/' + src));
                     }
                 }
-                // إضافة كلاسات وميزات ريسبونسيف للصور داخل المقال الجديد
-                $(img).addClass('article-inline-img').removeAttribute('width').removeAttribute('height');
+                
+                // التعديل الصحيح والمضمون هنا لعدم حدوث توقف في مكتبة Cheerio
+                $(img).addClass('article-inline-img');
+                $(img).removeAttr('width');
+                $(img).removeAttr('height');
             });
 
             return $body.html().trim();
