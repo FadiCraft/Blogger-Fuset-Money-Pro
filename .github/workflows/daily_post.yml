@@ -2,8 +2,9 @@ name: نشر يومي تلقائي
 
 on:
   schedule:
-    - cron: '0 */6 * * *'  # كل 6 ساعات
-  workflow_dispatch:
+    # ينشر كل 10 دقيقة
+    - cron: '*/10 * * * *'
+  workflow_dispatch:  # للتشغيل اليدوي
   push:
     branches: [ main ]
 
@@ -12,9 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
+    - name: تحميل المستودع
+      uses: actions/checkout@v4
       
-    - uses: actions/setup-node@v4
+    - name: إعداد Node.js
+      uses: actions/setup-node@v4
       with:
         node-version: '20'
         
@@ -24,22 +27,20 @@ jobs:
         npm install axios cheerio fs-extra
         
     - name: تشغيل النشر
-      env:
-        REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
       run: node index.js
       
-    - name: حفظ النتائج
+    - name: حفظ الحالة
       uses: actions/upload-artifact@v4
       with:
-        name: published-posts
+        name: published-state
         path: |
-          gsmarena_state.json
-          posts_gsmarena/
+          state.json
+          posts/*.html
           
     - name: تحديث المستودع
       run: |
         git config user.name "github-actions"
         git config user.email "actions@github.com"
-        git add gsmarena_state.json posts_gsmarena/
-        git commit -m "📱 $(date '+%Y-%m-%d %H:%M')" || exit 0
+        git add state.json posts/
+        git commit -m "نشر تلقائي: $(date)" || exit 0
         git push
