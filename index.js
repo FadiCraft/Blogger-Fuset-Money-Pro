@@ -4,10 +4,10 @@ const fs = require('fs-extra');
 
 // ===== إعدادات Blogger =====
 const BLOGGER_CONFIG = {
-    blogId: '2905417967444176859',
-    clientId: '1022254688087-e0eck5t7mnqj9fvkkojvi5cssah6f8i0.apps.googleusercontent.com',
-    clientSecret: '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',
-    refreshToken: process.env.REFRESH_TOKEN || '1//04AdT93Pf69USCgYIARAAGAQSNwF-L9IrvHIOqCdQGiroS8xHJFEdbZBwRjpQ5ozid8VFW8ZmBDlyVexCcJQQ8MJcOrSRp_mjOBA'
+    blogId: '2725115584838237159',
+    clientId: '1022254688087-6bj9eij12uuh5u2apm300hg0rl3v3u5i.apps.googleusercontent.com',
+    clientSecret: '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',
+    refreshToken: '1//04npcWG7RN3UwCgYIARAAGAQSNwF-L9IrrQTVgQCZ0m7WdslFX1lpUIZRy3ODYu70BImi5mYfMUQ8RvKaIPyi3Uhu7esth8aeVro'
 };
 
 // ===== الإعدادات العامة =====
@@ -68,25 +68,32 @@ class AutoPublisher {
         const html = await this.fetchHtml(SETTINGS.targetUrl);
         const $ = cheerio.load(html);
         
+        // البحث عن أول عنصر review-item (الأحدث)
         const firstReview = $('.review-item').first();
         
         if (!firstReview.length) {
             throw new Error('لم يتم العثور على أي مراجعة');
         }
 
+        // استخراج رابط المقال
         let articleLink = firstReview.find('.review-item-title a').attr('href');
         if (articleLink && !articleLink.startsWith('http')) {
             articleLink = SETTINGS.baseUrl + '/' + articleLink;
         }
 
+        // استخراج عنوان المقال
         const title = firstReview.find('.review-item-title a').text().trim();
 
+        // استخراج الصورة المصغرة
         let thumbnail = firstReview.find('.review-item-media-wrap img').attr('src');
         if (thumbnail && !thumbnail.startsWith('http')) {
             thumbnail = 'https:' + thumbnail;
         }
 
+        // استخراج التاريخ
         const date = firstReview.find('.meta-item-time').text().trim();
+
+        // استخراج عدد التعليقات
         const comments = firstReview.find('.meta-item-comments').text().trim();
 
         console.log(`✅ تم العثور على مقال: ${title}`);
@@ -106,18 +113,22 @@ class AutoPublisher {
         const html = await this.fetchHtml(articleUrl);
         const $ = cheerio.load(html);
         
+        // استخراج نص المقال من div#review-body
         const reviewBody = $('#review-body');
         
         if (!reviewBody.length) {
             throw new Error('لم يتم العثور على محتوى المراجعة');
         }
 
+        // نسخ المحتوى
         const contentClone = reviewBody.clone();
         
+        // إزالة العناصر غير المرغوب فيها
         contentClone.find('.multipic-select-images-button').remove();
         contentClone.find('script').remove();
         contentClone.find('style').remove();
         
+        // معالجة الصور - جعل الروابط كاملة وإضافة تنسيق
         contentClone.find('img').each((i, img) => {
             const $img = $(img);
             let src = $img.attr('src');
@@ -139,6 +150,7 @@ class AutoPublisher {
             }
         });
 
+        // معالجة القوائم
         contentClone.find('ul').css({
             'background': '#1a1a1a',
             'padding': '20px 40px',
@@ -152,6 +164,7 @@ class AutoPublisher {
             'border-bottom': '1px solid #2a2a2a'
         });
 
+        // معالجة العناوين
         contentClone.find('h3').css({
             'color': '#f5c518',
             'font-size': '24px',
@@ -160,6 +173,7 @@ class AutoPublisher {
             'padding-right': '15px'
         });
 
+        // معالجة الفقرات
         contentClone.find('p').css({
             'margin-bottom': '15px',
             'color': '#ccc',
@@ -371,6 +385,7 @@ class AutoPublisher {
 </html>`;
     }
 
+    // ===== الحصول على Access Token مع معالجة أفضل للأخطاء =====
     async getAccessToken() {
         try {
             console.log('🔑 جاري الحصول على رمز الوصول...');
@@ -388,6 +403,16 @@ class AutoPublisher {
             if (error.response) {
                 console.error('   الحالة:', error.response.status);
                 console.error('   الرسالة:', error.response.data);
+                
+                if (error.response.status === 400) {
+                    console.error('\n⚠️ يبدو أن refresh token منتهي الصلاحية أو غير صالح.');
+                    console.error('يجب عليك:');
+                    console.error('1. الذهاب إلى: https://console.cloud.google.com/apis/credentials');
+                    console.error('2. تفعيل Blogger API v3');
+                    console.error('3. إنشاء OAuth 2.0 Client ID جديد');
+                    console.error('4. استخدام الرابط التالي للحصول على refresh token جديد:');
+                    console.error(`   https://accounts.google.com/o/oauth2/auth?client_id=${BLOGGER_CONFIG.clientId}&redirect_uri=urn:ietf:wg:oauth:2.0:oob&scope=https://www.googleapis.com/auth/blogger&response_type=code`);
+                }
             } else {
                 console.error('   الخطأ:', error.message);
             }
@@ -395,6 +420,7 @@ class AutoPublisher {
         }
     }
 
+    // ===== التحقق من صلاحية المدونة =====
     async verifyBlogAccess(accessToken) {
         try {
             console.log('🔍 التحقق من صلاحية الوصول للمدونة...');
@@ -407,25 +433,42 @@ class AutoPublisher {
                 }
             );
             console.log(`✅ تم التحقق من المدونة: ${response.data.name}`);
+            console.log(`   الوصف: ${response.data.description || 'لا يوجد وصف'}`);
+            console.log(`   عدد المنشورات: ${response.data.posts.totalItems}`);
             return true;
         } catch (error) {
             console.error('❌ فشل التحقق من المدونة:');
             if (error.response) {
                 console.error('   الحالة:', error.response.status);
+                console.error('   الرسالة:', error.response.data);
+                
+                if (error.response.status === 403) {
+                    console.error('\n⚠️ ليس لديك صلاحية للنشر في هذه المدونة.');
+                    console.error('تأكد من:');
+                    console.error('1. أنك استخدمت نفس حساب Google المالك للمدونة عند إنشاء التطبيق');
+                    console.error('2. أنك منحت صلاحية Blogger API كاملة');
+                    console.error('3. أن Blog ID صحيح');
+                } else if (error.response.status === 404) {
+                    console.error('\n⚠️ المدونة غير موجودة. تأكد من Blog ID.');
+                }
             }
             return false;
         }
     }
 
+    // ===== النشر على بلوجر =====
     async publishToBlogger(postTitle, postContent) {
         try {
+            // 1. الحصول على access token
             const accessToken = await this.getAccessToken();
             
+            // 2. التحقق من صلاحية المدونة
             const hasAccess = await this.verifyBlogAccess(accessToken);
             if (!hasAccess) {
                 throw new Error('لا توجد صلاحية للوصول إلى المدونة');
             }
             
+            // 3. نشر المقال
             console.log('📝 جاري نشر المقال...');
             const postData = {
                 kind: 'blogger#post',
@@ -447,6 +490,7 @@ class AutoPublisher {
 
             console.log('✅ تم النشر بنجاح!');
             console.log(`🔗 رابط المقال: ${response.data.url}`);
+            console.log(`🆔 معرف المقال: ${response.data.id}`);
             
             return { 
                 success: true, 
@@ -460,6 +504,21 @@ class AutoPublisher {
             if (error.response) {
                 console.error('   الحالة:', error.response.status);
                 console.error('   الرسالة:', JSON.stringify(error.response.data, null, 2));
+                
+                // اقتراحات للحل
+                switch (error.response.status) {
+                    case 401:
+                        console.error('\n💡 الحل: تحتاج إلى refresh token جديد');
+                        console.error('استخدم الرابط التالي:');
+                        console.error(`https://accounts.google.com/o/oauth2/auth?client_id=${BLOGGER_CONFIG.clientId}&redirect_uri=urn:ietf:wg:oauth:2.0:oob&scope=https://www.googleapis.com/auth/blogger&response_type=code`);
+                        break;
+                    case 403:
+                        console.error('\n💡 الحل: تأكد من الصلاحيات التالية:');
+                        console.error('1. حساب Google المستخدم هو مالك المدونة');
+                        console.error('2. تم تفعيل Blogger API في Google Cloud Console');
+                        console.error('3. تم منح صلاحية https://www.googleapis.com/auth/blogger');
+                        break;
+                }
             } else {
                 console.error('   الخطأ:', error.message);
             }
@@ -471,6 +530,7 @@ class AutoPublisher {
         }
     }
 
+    // ===== حفظ نسخة محلية =====
     async saveLocalBackup(title, content) {
         try {
             await fs.ensureDir(SETTINGS.postsDir);
@@ -491,45 +551,92 @@ class AutoPublisher {
         }
     }
 
+    // ===== التشغيل الرئيسي =====
     async run() {
         console.log('\n' + '='.repeat(60));
         console.log('🚀 نظام النشر التلقائي من GSMArena');
         console.log('='.repeat(60));
+        console.log(`📅 التاريخ: ${new Date().toLocaleString('ar-SA')}`);
+        console.log(`📊 المقالات المنشورة سابقاً: ${this.state.publishedArticles.length}`);
+        console.log('='.repeat(60));
         
         try {
+            // 1. استخراج أحدث مقال
             const reviewInfo = await this.getLatestReview();
             
-            console.log('\n📋 المقال:', reviewInfo.title);
-            console.log(`🔗 الرابط: ${reviewInfo.link}`);
+            console.log('\n' + '-'.repeat(40));
+            console.log('📋 تفاصيل المقال:');
+            console.log(`   📱 العنوان: ${reviewInfo.title}`);
+            console.log(`   🔗 الرابط: ${reviewInfo.link}`);
+            console.log(`   📅 التاريخ: ${reviewInfo.date}`);
+            console.log(`   💬 التعليقات: ${reviewInfo.comments}`);
+            if (reviewInfo.thumbnail) {
+                console.log(`   🖼️ الصورة: ${reviewInfo.thumbnail.substring(0, 60)}...`);
+            }
+            console.log('-'.repeat(40));
 
+            // 2. التحقق من أن المقال لم يُنشر مسبقاً
             if (this.state.publishedArticles.includes(reviewInfo.link)) {
                 console.log('\n⚠️ هذا المقال تم نشره مسبقاً!');
+                console.log(`   📅 الرابط: ${reviewInfo.link}`);
+                console.log('   🛑 توقف لمنع التكرار.');
                 return;
             }
 
+            // 3. استخراج محتوى المقال
+            console.log('\n📄 جاري استخراج محتوى المقال...');
             const articleContent = await this.extractArticleContent(reviewInfo.link);
+            console.log(`✅ تم استخراج ${articleContent.length} حرف من المحتوى`);
+
+            // 4. توليد HTML المنشور
+            console.log('\n🛠️ جاري توليد HTML المنشور...');
             const postHtml = this.generatePostHtml(reviewInfo, articleContent);
-            
+            console.log('✅ تم توليد HTML');
+
+            // 5. حفظ نسخة محلية احتياطية
+            console.log('\n💾 جاري حفظ نسخة محلية...');
             await this.saveLocalBackup(reviewInfo.title, postHtml);
-            
+
+            // 6. النشر على بلوجر
+            console.log('\n📤 جاري النشر على بلوجر...');
             const postTitle = `📱 ${reviewInfo.title} - مراجعة شاملة | ${reviewInfo.date}`;
             const publishResult = await this.publishToBlogger(postTitle, postHtml);
 
+            // 7. تحديث الحالة
             if (publishResult.success) {
                 this.state.publishedArticles.push(reviewInfo.link);
                 this.saveState();
                 
-                console.log('\n🎉 تم نشر المقال بنجاح!');
-                console.log(`🔗 ${publishResult.url}`);
+                console.log('\n' + '='.repeat(60));
+                console.log('🎉🎉🎉 تم نشر المقال بنجاح! 🎉🎉🎉');
+                console.log('='.repeat(60));
+                console.log(`📱 العنوان: ${reviewInfo.title}`);
+                console.log(`🔗 رابط بلوجر: ${publishResult.url}`);
+                console.log(`🆔 معرف المنشور: ${publishResult.postId}`);
+                console.log(`📅 التاريخ: ${reviewInfo.date}`);
+                console.log(`💬 التعليقات: ${reviewInfo.comments}`);
+                console.log(`📊 إجمالي المقالات المنشورة: ${this.state.publishedArticles.length}`);
+                console.log('='.repeat(60));
             } else {
-                console.log('\n⚠️ فشل النشر - تم حفظ نسخة محلية');
+                console.log('\n' + '='.repeat(60));
+                console.log('⚠️ فشل النشر على بلوجر');
+                console.log('='.repeat(60));
+                console.log('✅ تم حفظ نسخة محلية للاستخدام اليدوي');
+                console.log('💡 يمكنك نشر الملف المحفوظ يدوياً من لوحة تحكم بلوجر');
+                console.log('='.repeat(60));
             }
 
         } catch (error) {
-            console.error('\n❌ فشل التشغيل:', error.message);
+            console.error('\n' + '='.repeat(60));
+            console.error('❌ فشل التشغيل:', error.message);
+            console.error('='.repeat(60));
         }
     }
 }
+
+// ===== تشغيل التطبيق =====
+console.log('📢 بدء تشغيل مستخرج مراجعات GSMArena');
+console.log('⏰ الوقت:', new Date().toLocaleString('ar-SA'));
 
 const publisher = new AutoPublisher();
 publisher.run().then(() => {
