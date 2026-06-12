@@ -4,10 +4,10 @@ const fs = require('fs-extra');
 
 // ===== إعدادات Blogger =====
 const BLOGGER_CONFIG = {
-    blogId: '2725115584838237159',
-    clientId: '1022254688087-6bj9eij12uuh5u2apm300hg0rl3v3u5i.apps.googleusercontent.com',
-    clientSecret: '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',
-    refreshToken: '1//04npcWG7RN3UwCgYIARAAGAQSNwF-L9IrrQTVgQCZ0m7WdslFX1lpUIZRy3ODYu70BImi5mYfMUQ8RvKaIPyi3Uhu7esth8aeVro'
+    blogId: '2905417967444176859',
+    clientId: '1022254688087-e0eck5t7mnqj9fvkkojvi5cssah6f8i0.apps.googleusercontent.com',
+    clientSecret: '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',
+    refreshToken: '1//04AdT93Pf69USCgYIARAAGAQSNwF-L9IrvHIOqCdQGiroS8xHJFEdbZBwRjpQ5ozid8VFW8ZmBDlyVexCcJQQ8MJcOrSRp_mjOBA'
 };
 
 // ===== الإعدادات العامة =====
