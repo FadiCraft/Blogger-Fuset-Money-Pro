@@ -2,8 +2,8 @@ name: نشر يومي تلقائي
 
 on:
   schedule:
-    # ينشر كل 10 دقيقة
-    - cron: '*/10 * * * *'
+    # ينشر كل 6 ساعات
+    - cron: '0 */6 * * *'
   workflow_dispatch:  # للتشغيل اليدوي
   push:
     branches: [ main ]
@@ -15,32 +15,47 @@ jobs:
     steps:
     - name: تحميل المستودع
       uses: actions/checkout@v4
-      
+      with:
+        fetch-depth: 0
+        
     - name: إعداد Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '20'
+        cache: 'npm'
         
     - name: تثبيت الحزم
       run: |
-        npm init -y
         npm install axios cheerio fs-extra
         
     - name: تشغيل النشر
       run: node index.js
+      continue-on-error: true
       
-    - name: حفظ الحالة
+    - name: حفظ الحالة كـ artifact
       uses: actions/upload-artifact@v4
       with:
-        name: published-state
+        name: published-state-${{ github.run_id }}
         path: |
-          state.json
-          posts/*.html
-          
+          gsmarena_state.json
+          posts_gsmarena/*.html
+        retention-days: 7
+        
     - name: تحديث المستودع
       run: |
-        git config user.name "github-actions"
-        git config user.email "actions@github.com"
-        git add state.json posts/
-        git commit -m "نشر تلقائي: $(date)" || exit 0
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add gsmarena_state.json posts_gsmarena/
+        git diff --staged --quiet || git commit -m "📰 نشر تلقائي: $(date -u +'%Y-%m-%d %H:%M UTC')"
         git push
+      continue-on-error: true
+      
+    - name: إرسال إشعار النجاح
+      if: success()
+      run: |
+        echo "✅ تم النشر بنجاح في $(date -u)"
+        
+    - name: إرسال إشعار الفشل
+      if: failure()
+      run: |
+        echo "❌ فشل النشر في $(date -u)"
