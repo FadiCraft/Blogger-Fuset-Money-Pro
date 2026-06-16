@@ -5,9 +5,9 @@ const fs = require('fs-extra');
 // ===== إعدادات Blogger =====
 const BLOGGER_CONFIG = {
     blogId: '2905417967444176859',
-    clientId: '1022254688087-6bj9eij12uuh5u2apm300hg0rl3v3u5i.apps.googleusercontent.com',
-    clientSecret: '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',
-    refreshToken: '1//04npcWG7RN3UwCgYIARAAGAQSNwF-L9IrrQTVgQCZ0m7WdslFX1lpUIZRy3ODYu70BImi5mYfMUQ8RvKaIPyi3Uhu7esth8aeVro'
+    clientId: '862317633550-9uo7r3foj133e1dolgaj6lokg4ulfj4j.apps.googleusercontent.com',
+    clientSecret: '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',
+    refreshToken: '1//04RdwLvw9w2UrCgYIARAAGAQSNwF-L9Ir_Xv-NLoxRBsLOugehZICSsJCWoJjFnJv5SfgYgtpQI1Ffp8cVk3pgT0K9mRz1Vb6crs'
 };
 
 // ===== الإعدادات العامة =====
