@@ -22,10 +22,10 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '20'
-        cache: 'npm'
         
     - name: تثبيت الحزم
       run: |
+        npm init -y
         npm install axios cheerio fs-extra
         
     - name: تشغيل النشر
@@ -45,7 +45,7 @@ jobs:
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add gsmarena_state.json posts_gsmarena/
+        git add gsmarena_state.json posts_gsmarena/ package.json package-lock.json
         git diff --staged --quiet || git commit -m "📰 نشر تلقائي: $(date -u +'%Y-%m-%d %H:%M UTC')"
         git push
       continue-on-error: true
