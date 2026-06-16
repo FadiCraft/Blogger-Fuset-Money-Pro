@@ -20,13 +20,7 @@ const SETTINGS = {
     siteName: 'DeepLexa',
     siteUrl: 'https://www.deeplexa.com/',
     authorName: 'DeepLexa Team',
-    authorDescription: 'Tech news, reviews, and analytics',
-    // الفئات اللي نبي نستخرج منها مقال واحد فقط
-    categories: [
-        { name: 'Reviews', selector: '.review-item', type: 'review' },
-        { name: 'News', selector: '.news-item', type: 'news' },
-        { name: 'Blog', selector: '.blog-item', type: 'blog' }
-    ]
+    authorDescription: 'Tech news, reviews, and analytics'
 };
 
 class AutoPublisher {
@@ -39,7 +33,6 @@ class AutoPublisher {
         try {
             if (fs.existsSync(SETTINGS.stateFile)) {
                 const state = fs.readJsonSync(SETTINGS.stateFile);
-                // التأكد من وجود المصفوفات المطلوبة
                 if (!state.publishedUrls) state.publishedUrls = [];
                 if (!state.publishedTitles) state.publishedTitles = [];
                 return state;
@@ -90,7 +83,6 @@ class AutoPublisher {
     }
 
     isArticlePublished(url, title) {
-        // التحقق من الرابط أو العنوان
         const urlPublished = this.state.publishedUrls.includes(url);
         const titlePublished = this.state.publishedTitles.some(t => 
             this.normalizeTitle(t) === this.normalizeTitle(title)
@@ -107,7 +99,6 @@ class AutoPublisher {
     }
 
     extractDate($, element) {
-        // محاولة استخراج التاريخ بعدة طرق
         const selectors = [
             '.meta-item-time',
             '.article-info-meta time',
@@ -126,7 +117,6 @@ class AutoPublisher {
             }
         }
         
-        // إذا ما لقينا تاريخ، نستخدم تاريخ اليوم
         return new Date().toISOString().split('T')[0];
     }
 
@@ -134,7 +124,6 @@ class AutoPublisher {
         try {
             const date = new Date(dateString);
             if (isNaN(date.getTime())) {
-                // إذا كان النص مثل "10 June 2026"
                 const months = ['January', 'February', 'March', 'April', 'May', 'June',
                               'July', 'August', 'September', 'October', 'November', 'December'];
                 const parts = dateString.split(' ');
@@ -164,7 +153,7 @@ class AutoPublisher {
 
     estimateReadTime(contentLength) {
         const wordsPerMinute = 200;
-        const words = contentLength / 5; // تقدير عدد الكلمات
+        const words = contentLength / 5;
         const minutes = Math.max(1, Math.ceil(words / wordsPerMinute));
         return `${minutes} min read`;
     }
@@ -179,7 +168,6 @@ class AutoPublisher {
             .substring(0, 80);
     }
 
-    // ===== استخراج أحدث مقال من كل قسم =====
     async getLatestArticles() {
         console.log('📥 جلب أحدث المقالات من GSMArena...');
         const html = await this.fetchHtml(SETTINGS.targetUrl);
@@ -187,44 +175,41 @@ class AutoPublisher {
         
         const articles = [];
         
-        // 1. مقالات المراجعات (Reviews)
+        // مقال من قسم المراجعات
         const reviewItem = $('.review-item').first();
         if (reviewItem.length) {
             const article = this.extractArticleInfo($, reviewItem, 'Review');
             if (article) articles.push(article);
         }
         
-        // 2. مقالات الأخبار (News)
+        // مقال من قسم الأخبار
         const newsItem = $('.news-item').first();
         if (newsItem.length) {
             const article = this.extractArticleInfo($, newsItem, 'News');
             if (article) articles.push(article);
-        }
-        
-        // 3. مقالات المدونة (Blog)
-        const blogItem = $('.blog-item').first();
-        if (!blogItem.length) {
-            // بديل: البحث عن أي نوع آخر من المقالات
-            const altItem = $('.module-article-item, .article-item, .post-item').first();
-            if (altItem.length) {
-                const article = this.extractArticleInfo($, altItem, 'Blog');
+        } else {
+            // البحث عن عناصر بديلة للأخبار
+            const altNewsItem = $('.module-article-item, .article-item').first();
+            if (altNewsItem.length) {
+                const article = this.extractArticleInfo($, altNewsItem, 'News');
                 if (article) articles.push(article);
             }
-        } else {
+        }
+        
+        // مقال من قسم المدونة
+        const blogItem = $('.blog-item').first();
+        if (blogItem.length) {
             const article = this.extractArticleInfo($, blogItem, 'Blog');
             if (article) articles.push(article);
         }
         
-        // فلترة المقالات الفارغة والمكررة
         const validArticles = articles.filter(a => a && a.link);
-        
         console.log(`✅ تم العثور على ${validArticles.length} مقالات جديدة`);
         return validArticles;
     }
 
     extractArticleInfo($, element, category) {
         try {
-            // استخراج الرابط
             let link = element.find('a').first().attr('href') || 
                       element.find('[href]').first().attr('href');
             
@@ -236,12 +221,10 @@ class AutoPublisher {
                     SETTINGS.baseUrl + '/' + link;
             }
             
-            // استخراج العنوان
             const title = element.find('h3, h2, .title, .article-title, a').first().text().trim() ||
                          element.find('img').attr('alt')?.trim() ||
                          'Untitled Article';
             
-            // استخراج الصورة
             let image = element.find('img').first().attr('src') ||
                        element.find('img').first().attr('data-src');
             
@@ -250,10 +233,7 @@ class AutoPublisher {
                 else if (!image.startsWith('http')) image = 'https://' + image;
             }
             
-            // استخراج التاريخ
             const date = this.extractDate($, element);
-            
-            // استخراج الوصف المختصر
             const excerpt = element.find('p, .excerpt, .description').first().text().trim() || '';
             
             return {
@@ -270,31 +250,25 @@ class AutoPublisher {
         }
     }
 
-    // ===== استخراج محتوى المقال =====
     async extractArticleContent(articleUrl) {
         console.log(`📄 استخراج محتوى المقال من: ${articleUrl}`);
         const html = await this.fetchHtml(articleUrl);
         const $ = cheerio.load(html);
         
-        // البحث عن المحتوى الرئيسي
         let mainContent = $('#review-body, #article-body, .article-content, .post-content, article, main');
         
         if (!mainContent.length) {
-            // محاولة إيجاد المحتوى بطريقة أوسع
             mainContent = $('body').clone();
             mainContent.find('header, footer, nav, .sidebar, .comments, .related-posts, script, style, noscript, iframe, .advertisement, .social-share').remove();
         }
         
         const contentClone = mainContent.clone();
         
-        // تنظيف شامل
         contentClone.find('script, style, noscript, iframe, .ad, .advertisement, .social-share, .comments, .related, nav').remove();
         contentClone.find('[onclick], [onload], [onerror]').removeAttr('onclick onload onerror');
         
-        // إزالة كل الكلاسات والـ IDs والبيانات المخصصة
         contentClone.find('*').each((i, el) => {
             const $el = $(el);
-            // الاحتفاظ فقط بالوسوم الأساسية
             const keepAttrs = ['src', 'alt', 'href', 'title'];
             const attrs = Object.keys($el.attr() || {});
             attrs.forEach(attr => {
@@ -303,14 +277,11 @@ class AutoPublisher {
                 }
             });
             
-            // إزالة كل الكلاسات ما عدا الضرورية
             $el.removeAttr('class');
             $el.removeAttr('id');
             $el.removeAttr('style');
-            $el.removeAttr('data-*');
         });
         
-        // معالجة الصور
         contentClone.find('img').each((i, img) => {
             const $img = $(img);
             let src = $img.attr('src') || $img.attr('data-src') || $img.attr('data-original');
@@ -321,7 +292,6 @@ class AutoPublisher {
                     src = 'https://' + src;
                 }
                 
-                // تجاهل الصور الصغيرة جداً (أيقونات)
                 if (src.includes('icon') || src.includes('logo') || src.includes('avatar')) {
                     $img.remove();
                     return;
@@ -335,7 +305,6 @@ class AutoPublisher {
             }
         });
         
-        // إزالة الروابط الفارغة والتنقل
         contentClone.find('a').each((i, a) => {
             const $a = $(a);
             const href = $a.attr('href');
@@ -344,7 +313,6 @@ class AutoPublisher {
             }
         });
         
-        // تنظيف النص من الفراغات الزائدة
         let content = contentClone.html() || '';
         content = content
             .replace(/\n\s*\n/g, '\n')
@@ -355,20 +323,17 @@ class AutoPublisher {
         return content;
     }
 
-    // ===== توليد FAQ من المحتوى =====
     generateFAQ($, content) {
         const faqItems = [];
         
-        // استخراج العناوين كأسئلة محتملة
         const headings = content.find('h2, h3, h4');
         headings.each((i, heading) => {
-            if (i >= 4) return false; // أقصى 4 أسئلة
+            if (i >= 4) return false;
             
             const $heading = $(heading);
             const question = $heading.text().trim();
             
             if (question.length > 10 && question.length < 100) {
-                // البحث عن الإجابة (الفقرة التالية)
                 let answer = '';
                 let nextEl = $heading.next();
                 let attempts = 0;
@@ -388,7 +353,6 @@ class AutoPublisher {
             }
         });
         
-        // إذا ما فيه FAQs كفاية، نضيف أسئلة افتراضية
         if (faqItems.length < 2) {
             const defaultFAQs = [
                 { 
@@ -414,18 +378,14 @@ class AutoPublisher {
         return faqItems;
     }
 
-    // ===== توليد HTML منشور احترافي =====
     generatePostHtml(article, articleContent) {
         const formattedDate = this.formatDate(article.date);
         const readTime = this.estimateReadTime(articleContent.length);
         const slug = this.generateSlug(article.title);
-        const categoryClass = article.category.toLowerCase();
         
-        // توليد FAQs
         const $ = cheerio.load(`<div>${articleContent}</div>`);
         const faqs = this.generateFAQ($, $('div'));
         
-        // أيقونة الفئة
         const categoryIcons = {
             'Review': 'fa-star',
             'News': 'fa-newspaper',
@@ -853,7 +813,6 @@ class AutoPublisher {
 </html>`;
     }
 
-    // ===== الحصول على Access Token =====
     async getAccessToken() {
         try {
             console.log('🔑 جاري الحصول على رمز الوصول...');
@@ -876,7 +835,6 @@ class AutoPublisher {
         }
     }
 
-    // ===== التحقق من صلاحية المدونة =====
     async verifyBlogAccess(accessToken) {
         try {
             console.log('🔍 التحقق من صلاحية الوصول للمدونة...');
@@ -899,7 +857,6 @@ class AutoPublisher {
         }
     }
 
-    // ===== النشر على بلوجر =====
     async publishToBlogger(postTitle, postContent, labels) {
         try {
             const accessToken = await this.getAccessToken();
@@ -954,7 +911,6 @@ class AutoPublisher {
         }
     }
 
-    // ===== حفظ نسخة محلية =====
     async saveLocalBackup(title, content, category) {
         try {
             await fs.ensureDir(SETTINGS.postsDir);
@@ -977,7 +933,6 @@ class AutoPublisher {
         }
     }
 
-    // ===== التشغيل الرئيسي =====
     async run() {
         console.log('\n' + '='.repeat(70));
         console.log('🚀 نظام النشر التلقائي من GSMArena - الإصدار المحسن');
@@ -987,7 +942,6 @@ class AutoPublisher {
         console.log('='.repeat(70));
         
         try {
-            // 1. استخراج أحدث مقال من كل قسم
             const articles = await this.getLatestArticles();
             
             if (articles.length === 0) {
@@ -995,7 +949,6 @@ class AutoPublisher {
                 return;
             }
             
-            // 2. فلترة المقالات غير المنشورة
             const unpublishedArticles = articles.filter(article => 
                 !this.isArticlePublished(article.link, article.title)
             );
@@ -1007,7 +960,7 @@ class AutoPublisher {
             
             console.log(`\n📋 تم العثور على ${unpublishedArticles.length} مقالات جديدة للنشر`);
             
-            // 3. نشر كل مقال            for (let i = 0; i < unpublishedArticles.length; i++) {
+            for (let i = 0; i < unpublishedArticles.length; i++) {
                 const article = unpublishedArticles[i];
                 
                 console.log(`\n${'─'.repeat(50)}`);
@@ -1022,27 +975,22 @@ class AutoPublisher {
                 console.log(`${'─'.repeat(50)}`);
                 
                 try {
-                    // استخراج محتوى المقال
                     console.log('\n📄 جاري استخراج محتوى المقال...');
                     const articleContent = await this.extractArticleContent(article.link);
                     console.log(`✅ تم استخراج المحتوى (${articleContent.length} حرف)`);
                     
-                    // توليد HTML
                     console.log('\n🛠️ جاري توليد HTML...');
                     const postHtml = this.generatePostHtml(article, articleContent);
                     console.log('✅ تم توليد HTML');
                     
-                    // حفظ نسخة محلية
                     console.log('\n💾 جاري حفظ نسخة محلية...');
                     await this.saveLocalBackup(article.title, postHtml, article.category);
                     
-                    // النشر على بلوجر
                     console.log('\n📤 جاري النشر على بلوجر...');
                     const postTitle = article.title;
                     const labels = ['Tech', article.category, 'GSMArena', 'Analysis'];
                     const publishResult = await this.publishToBlogger(postTitle, postHtml, labels);
                     
-                    // تحديث الحالة
                     if (publishResult.success) {
                         this.state.publishedUrls.push(article.link);
                         this.state.publishedTitles.push(article.title);
@@ -1055,7 +1003,6 @@ class AutoPublisher {
                         console.log('💡 تم حفظ نسخة محلية للنشر اليدوي');
                     }
                     
-                    // انتظار بين المقالات لتجنب rate limiting
                     if (i < unpublishedArticles.length - 1) {
                         console.log('\n⏳ انتظار 3 ثواني قبل المقال التالي...');
                         await new Promise(resolve => setTimeout(resolve, 3000));
@@ -1066,10 +1013,8 @@ class AutoPublisher {
                 }
             }
             
-            // ملخص نهائي
             console.log('\n' + '='.repeat(70));
             console.log('📊 ملخص النشر:');
-            console.log(`   ✅ تم النشر بنجاح: ${this.newArticles.length}`);
             console.log(`   📦 إجمالي المقالات المحفوظة: ${this.state.publishedUrls.length}`);
             console.log(`   📁 النسخ المحلية محفوظة في: ${SETTINGS.postsDir}/`);
             console.log('='.repeat(70));
