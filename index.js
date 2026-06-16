@@ -1,6 +1,7 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 const fs = require('fs-extra');
+const path = require('path');
 
 // ===== إعدادات Blogger =====
 const BLOGGER_CONFIG = {
@@ -16,28 +17,46 @@ const SETTINGS = {
     baseUrl: 'https://www.gsmarena.com',
     stateFile: 'gsmarena_state.json',
     postsDir: 'posts_gsmarena',
-    siteName: 'كيروزوزو',
-    siteUrl: 'https://www.kirozozo.xyz/'
+    siteName: 'DeepLexa',
+    siteUrl: 'https://www.deeplexa.com/',
+    authorName: 'DeepLexa Team',
+    authorDescription: 'Tech news, reviews, and analytics',
+    // الفئات اللي نبي نستخرج منها مقال واحد فقط
+    categories: [
+        { name: 'Reviews', selector: '.review-item', type: 'review' },
+        { name: 'News', selector: '.news-item', type: 'news' },
+        { name: 'Blog', selector: '.blog-item', type: 'blog' }
+    ]
 };
 
 class AutoPublisher {
     constructor() {
         this.state = this.loadState();
+        this.newArticles = [];
     }
 
     loadState() {
         try {
             if (fs.existsSync(SETTINGS.stateFile)) {
-                return fs.readJsonSync(SETTINGS.stateFile);
+                const state = fs.readJsonSync(SETTINGS.stateFile);
+                // التأكد من وجود المصفوفات المطلوبة
+                if (!state.publishedUrls) state.publishedUrls = [];
+                if (!state.publishedTitles) state.publishedTitles = [];
+                return state;
             }
         } catch (error) {
             console.log('⚠️ ملف الحالة تالف، إنشاء ملف جديد...');
         }
-        return { publishedArticles: [] };
+        return { 
+            publishedUrls: [],
+            publishedTitles: [],
+            lastRun: null
+        };
     }
 
     saveState() {
         try {
+            this.state.lastRun = new Date().toISOString();
             fs.writeJsonSync(SETTINGS.stateFile, this.state, { spaces: 2 });
             console.log('💾 تم حفظ الحالة بنجاح');
         } catch (error) {
@@ -45,66 +64,210 @@ class AutoPublisher {
         }
     }
 
-    async fetchHtml(url) {
-        try {
-            const res = await axios.get(url, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8'
-                },
-                timeout: 15000
-            });
-            return res.data;
-        } catch (error) {
-            console.error('❌ فشل جلب الصفحة:', error.message);
-            throw error;
+    async fetchHtml(url, retries = 3) {
+        for (let i = 0; i < retries; i++) {
+            try {
+                const res = await axios.get(url, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                        'Accept-Language': 'en-US,en;q=0.9',
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
+                    },
+                    timeout: 20000
+                });
+                return res.data;
+            } catch (error) {
+                if (i === retries - 1) {
+                    console.error(`❌ فشل جلب الصفحة بعد ${retries} محاولات:`, error.message);
+                    throw error;
+                }
+                console.log(`⚠️ محاولة ${i + 1} فشلت، إعادة المحاولة...`);
+                await new Promise(resolve => setTimeout(resolve, 2000 * (i + 1)));
+            }
         }
     }
 
-    // ===== استخراج أحدث مقال من صفحة المراجعات =====
-    async getLatestReview() {
-        console.log('📥 جلب أحدث مراجعة من GSMArena...');
+    isArticlePublished(url, title) {
+        // التحقق من الرابط أو العنوان
+        const urlPublished = this.state.publishedUrls.includes(url);
+        const titlePublished = this.state.publishedTitles.some(t => 
+            this.normalizeTitle(t) === this.normalizeTitle(title)
+        );
+        return urlPublished || titlePublished;
+    }
+
+    normalizeTitle(title) {
+        return title
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    extractDate($, element) {
+        // محاولة استخراج التاريخ بعدة طرق
+        const selectors = [
+            '.meta-item-time',
+            '.article-info-meta time',
+            'time',
+            '.date',
+            '[datetime]'
+        ];
+        
+        for (const selector of selectors) {
+            const el = element.find(selector);
+            if (el.length) {
+                const datetime = el.attr('datetime');
+                if (datetime) return datetime;
+                const text = el.text().trim();
+                if (text) return text;
+            }
+        }
+        
+        // إذا ما لقينا تاريخ، نستخدم تاريخ اليوم
+        return new Date().toISOString().split('T')[0];
+    }
+
+    formatDate(dateString) {
+        try {
+            const date = new Date(dateString);
+            if (isNaN(date.getTime())) {
+                // إذا كان النص مثل "10 June 2026"
+                const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                              'July', 'August', 'September', 'October', 'November', 'December'];
+                const parts = dateString.split(' ');
+                if (parts.length === 3) {
+                    const day = parts[0];
+                    const month = months.findIndex(m => m.toLowerCase() === parts[1].toLowerCase());
+                    const year = parts[2];
+                    if (month >= 0) {
+                        return new Date(year, month, day).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                        });
+                    }
+                }
+                return dateString;
+            }
+            return date.toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+        } catch {
+            return dateString;
+        }
+    }
+
+    estimateReadTime(contentLength) {
+        const wordsPerMinute = 200;
+        const words = contentLength / 5; // تقدير عدد الكلمات
+        const minutes = Math.max(1, Math.ceil(words / wordsPerMinute));
+        return `${minutes} min read`;
+    }
+
+    generateSlug(title) {
+        return title
+            .toLowerCase()
+            .replace(/[^a-z0-9\s-]/g, '')
+            .replace(/\s+/g, '-')
+            .replace(/-+/g, '-')
+            .trim('-')
+            .substring(0, 80);
+    }
+
+    // ===== استخراج أحدث مقال من كل قسم =====
+    async getLatestArticles() {
+        console.log('📥 جلب أحدث المقالات من GSMArena...');
         const html = await this.fetchHtml(SETTINGS.targetUrl);
         const $ = cheerio.load(html);
         
-        // البحث عن أول عنصر review-item (الأحدث)
-        const firstReview = $('.review-item').first();
+        const articles = [];
         
-        if (!firstReview.length) {
-            throw new Error('لم يتم العثور على أي مراجعة');
+        // 1. مقالات المراجعات (Reviews)
+        const reviewItem = $('.review-item').first();
+        if (reviewItem.length) {
+            const article = this.extractArticleInfo($, reviewItem, 'Review');
+            if (article) articles.push(article);
         }
-
-        // استخراج رابط المقال
-        let articleLink = firstReview.find('.review-item-title a').attr('href');
-        if (articleLink && !articleLink.startsWith('http')) {
-            articleLink = SETTINGS.baseUrl + '/' + articleLink;
+        
+        // 2. مقالات الأخبار (News)
+        const newsItem = $('.news-item').first();
+        if (newsItem.length) {
+            const article = this.extractArticleInfo($, newsItem, 'News');
+            if (article) articles.push(article);
         }
-
-        // استخراج عنوان المقال
-        const title = firstReview.find('.review-item-title a').text().trim();
-
-        // استخراج الصورة المصغرة
-        let thumbnail = firstReview.find('.review-item-media-wrap img').attr('src');
-        if (thumbnail && !thumbnail.startsWith('http')) {
-            thumbnail = 'https:' + thumbnail;
+        
+        // 3. مقالات المدونة (Blog)
+        const blogItem = $('.blog-item').first();
+        if (!blogItem.length) {
+            // بديل: البحث عن أي نوع آخر من المقالات
+            const altItem = $('.module-article-item, .article-item, .post-item').first();
+            if (altItem.length) {
+                const article = this.extractArticleInfo($, altItem, 'Blog');
+                if (article) articles.push(article);
+            }
+        } else {
+            const article = this.extractArticleInfo($, blogItem, 'Blog');
+            if (article) articles.push(article);
         }
+        
+        // فلترة المقالات الفارغة والمكررة
+        const validArticles = articles.filter(a => a && a.link);
+        
+        console.log(`✅ تم العثور على ${validArticles.length} مقالات جديدة`);
+        return validArticles;
+    }
 
-        // استخراج التاريخ
-        const date = firstReview.find('.meta-item-time').text().trim();
-
-        // استخراج عدد التعليقات
-        const comments = firstReview.find('.meta-item-comments').text().trim();
-
-        console.log(`✅ تم العثور على مقال: ${title}`);
-
-        return {
-            title,
-            link: articleLink,
-            thumbnail,
-            date,
-            comments
-        };
+    extractArticleInfo($, element, category) {
+        try {
+            // استخراج الرابط
+            let link = element.find('a').first().attr('href') || 
+                      element.find('[href]').first().attr('href');
+            
+            if (!link) return null;
+            
+            if (!link.startsWith('http')) {
+                link = link.startsWith('/') ? 
+                    SETTINGS.baseUrl + link : 
+                    SETTINGS.baseUrl + '/' + link;
+            }
+            
+            // استخراج العنوان
+            const title = element.find('h3, h2, .title, .article-title, a').first().text().trim() ||
+                         element.find('img').attr('alt')?.trim() ||
+                         'Untitled Article';
+            
+            // استخراج الصورة
+            let image = element.find('img').first().attr('src') ||
+                       element.find('img').first().attr('data-src');
+            
+            if (image) {
+                if (image.startsWith('//')) image = 'https:' + image;
+                else if (!image.startsWith('http')) image = 'https://' + image;
+            }
+            
+            // استخراج التاريخ
+            const date = this.extractDate($, element);
+            
+            // استخراج الوصف المختصر
+            const excerpt = element.find('p, .excerpt, .description').first().text().trim() || '';
+            
+            return {
+                title,
+                link,
+                image,
+                date,
+                excerpt,
+                category
+            };
+        } catch (error) {
+            console.error('خطأ في استخراج معلومات المقال:', error.message);
+            return null;
+        }
     }
 
     // ===== استخراج محتوى المقال =====
@@ -113,279 +276,584 @@ class AutoPublisher {
         const html = await this.fetchHtml(articleUrl);
         const $ = cheerio.load(html);
         
-        // استخراج نص المقال من div#review-body
-        const reviewBody = $('#review-body');
+        // البحث عن المحتوى الرئيسي
+        let mainContent = $('#review-body, #article-body, .article-content, .post-content, article, main');
         
-        if (!reviewBody.length) {
-            throw new Error('لم يتم العثور على محتوى المراجعة');
+        if (!mainContent.length) {
+            // محاولة إيجاد المحتوى بطريقة أوسع
+            mainContent = $('body').clone();
+            mainContent.find('header, footer, nav, .sidebar, .comments, .related-posts, script, style, noscript, iframe, .advertisement, .social-share').remove();
         }
-
-        // نسخ المحتوى
-        const contentClone = reviewBody.clone();
         
-        // إزالة العناصر غير المرغوب فيها
-        contentClone.find('.multipic-select-images-button').remove();
-        contentClone.find('script').remove();
-        contentClone.find('style').remove();
+        const contentClone = mainContent.clone();
         
-        // معالجة الصور - جعل الروابط كاملة وإضافة تنسيق
+        // تنظيف شامل
+        contentClone.find('script, style, noscript, iframe, .ad, .advertisement, .social-share, .comments, .related, nav').remove();
+        contentClone.find('[onclick], [onload], [onerror]').removeAttr('onclick onload onerror');
+        
+        // إزالة كل الكلاسات والـ IDs والبيانات المخصصة
+        contentClone.find('*').each((i, el) => {
+            const $el = $(el);
+            // الاحتفاظ فقط بالوسوم الأساسية
+            const keepAttrs = ['src', 'alt', 'href', 'title'];
+            const attrs = Object.keys($el.attr() || {});
+            attrs.forEach(attr => {
+                if (!keepAttrs.includes(attr) && !attr.startsWith('aria-')) {
+                    $el.removeAttr(attr);
+                }
+            });
+            
+            // إزالة كل الكلاسات ما عدا الضرورية
+            $el.removeAttr('class');
+            $el.removeAttr('id');
+            $el.removeAttr('style');
+            $el.removeAttr('data-*');
+        });
+        
+        // معالجة الصور
         contentClone.find('img').each((i, img) => {
             const $img = $(img);
-            let src = $img.attr('src');
+            let src = $img.attr('src') || $img.attr('data-src') || $img.attr('data-original');
+            
             if (src) {
-                if (src.startsWith('//')) {
-                    src = 'https:' + src;
-                } else if (!src.startsWith('http')) {
+                if (src.startsWith('//')) src = 'https:' + src;
+                else if (!src.startsWith('http') && !src.startsWith('data:')) {
                     src = 'https://' + src;
                 }
+                
+                // تجاهل الصور الصغيرة جداً (أيقونات)
+                if (src.includes('icon') || src.includes('logo') || src.includes('avatar')) {
+                    $img.remove();
+                    return;
+                }
+                
                 $img.attr('src', src);
                 $img.attr('loading', 'lazy');
-                $img.css({
-                    'max-width': '100%',
-                    'height': 'auto',
-                    'border-radius': '8px',
-                    'margin': '20px auto',
-                    'display': 'block'
-                });
+                $img.attr('alt', $img.attr('alt') || 'Article image');
+            } else {
+                $img.remove();
             }
         });
-
-        // معالجة القوائم
-        contentClone.find('ul').css({
-            'background': '#1a1a1a',
-            'padding': '20px 40px',
-            'border-radius': '10px',
-            'margin': '20px 0',
-            'list-style': 'none'
+        
+        // إزالة الروابط الفارغة والتنقل
+        contentClone.find('a').each((i, a) => {
+            const $a = $(a);
+            const href = $a.attr('href');
+            if (!href || href === '#' || href.startsWith('javascript:')) {
+                $a.replaceWith($a.text());
+            }
         });
-
-        contentClone.find('ul li').css({
-            'padding': '8px 0',
-            'border-bottom': '1px solid #2a2a2a'
-        });
-
-        // معالجة العناوين
-        contentClone.find('h3').css({
-            'color': '#f5c518',
-            'font-size': '24px',
-            'margin': '30px 0 15px 0',
-            'border-right': '4px solid #f5c518',
-            'padding-right': '15px'
-        });
-
-        // معالجة الفقرات
-        contentClone.find('p').css({
-            'margin-bottom': '15px',
-            'color': '#ccc',
-            'line-height': '1.8'
-        });
-
-        return contentClone.html();
+        
+        // تنظيف النص من الفراغات الزائدة
+        let content = contentClone.html() || '';
+        content = content
+            .replace(/\n\s*\n/g, '\n')
+            .replace(/>\s+</g, '><')
+            .replace(/\s{2,}/g, ' ')
+            .trim();
+        
+        return content;
     }
 
-    // ===== توليد HTML المنشور =====
-    generatePostHtml(reviewInfo, articleContent) {
+    // ===== توليد FAQ من المحتوى =====
+    generateFAQ($, content) {
+        const faqItems = [];
+        
+        // استخراج العناوين كأسئلة محتملة
+        const headings = content.find('h2, h3, h4');
+        headings.each((i, heading) => {
+            if (i >= 4) return false; // أقصى 4 أسئلة
+            
+            const $heading = $(heading);
+            const question = $heading.text().trim();
+            
+            if (question.length > 10 && question.length < 100) {
+                // البحث عن الإجابة (الفقرة التالية)
+                let answer = '';
+                let nextEl = $heading.next();
+                let attempts = 0;
+                
+                while (nextEl.length && attempts < 3) {
+                    if (nextEl.is('p') && nextEl.text().trim().length > 20) {
+                        answer = nextEl.text().trim().substring(0, 200);
+                        break;
+                    }
+                    nextEl = nextEl.next();
+                    attempts++;
+                }
+                
+                if (answer) {
+                    faqItems.push({ question, answer });
+                }
+            }
+        });
+        
+        // إذا ما فيه FAQs كفاية، نضيف أسئلة افتراضية
+        if (faqItems.length < 2) {
+            const defaultFAQs = [
+                { 
+                    question: 'What are the key features of this device?', 
+                    answer: 'This device comes with impressive specifications including a powerful processor, high-quality camera system, and long-lasting battery life.' 
+                },
+                { 
+                    question: 'Is this device worth buying?', 
+                    answer: 'Based on the review and specifications, this device offers good value for its price point, with competitive features compared to other devices in its category.' 
+                }
+            ];
+            
+            while (faqItems.length < 3) {
+                const defaultFaq = defaultFAQs[faqItems.length];
+                if (defaultFaq && !faqItems.find(f => f.question === defaultFaq.question)) {
+                    faqItems.push(defaultFaq);
+                } else {
+                    break;
+                }
+            }
+        }
+        
+        return faqItems;
+    }
+
+    // ===== توليد HTML منشور احترافي =====
+    generatePostHtml(article, articleContent) {
+        const formattedDate = this.formatDate(article.date);
+        const readTime = this.estimateReadTime(articleContent.length);
+        const slug = this.generateSlug(article.title);
+        const categoryClass = article.category.toLowerCase();
+        
+        // توليد FAQs
+        const $ = cheerio.load(`<div>${articleContent}</div>`);
+        const faqs = this.generateFAQ($, $('div'));
+        
+        // أيقونة الفئة
+        const categoryIcons = {
+            'Review': 'fa-star',
+            'News': 'fa-newspaper',
+            'Blog': 'fa-blog'
+        };
+        const categoryIcon = categoryIcons[article.category] || 'fa-star';
+        
         return `<!DOCTYPE html>
-<html dir="rtl">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${reviewInfo.title} - مراجعة شاملة</title>
-  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <style>
-    * { font-family: 'Cairo', sans-serif; margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #0a0a0a; color: #e0e0e0; padding: 20px; line-height: 1.8; direction: rtl; }
-    
-    .article-container {
-      max-width: 900px;
-      margin: 0 auto;
-      background: #111;
-      border-radius: 15px;
-      overflow: hidden;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Read our detailed coverage of ${article.title}. Get insights, analysis, and everything you need to know.">
+    <meta property="og:title" content="${article.title}">
+    <meta property="og:description" content="Read our detailed coverage of ${article.title}. Get insights, analysis, and everything you need to know.">
+    ${article.image ? `<meta property="og:image" content="${article.image}">` : ''}
+    <meta property="og:type" content="article">
+    <meta name="twitter:card" content="summary_large_image">
+    <title>${article.title}</title>
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "TechArticle",
+        "headline": "${article.title.replace(/"/g, '\\"')}",
+        ${article.image ? `"image": "${article.image}",` : ''}
+        "datePublished": "${article.date}",
+        "author": {
+            "@type": "Organization",
+            "name": "${SETTINGS.authorName}"
+        },
+        "publisher": {
+            "@type": "Organization",
+            "name": "${SETTINGS.authorName}"
+        },
+        "description": "Read our detailed coverage of ${article.title.replace(/"/g, '\\"')}. Get insights, analysis, and everything you need to know."
     }
-    
-    .article-header {
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-      padding: 40px;
-      text-align: center;
-      border-bottom: 3px solid #f5c518;
-    }
-    
-    .article-header h1 {
-      font-size: 36px;
-      color: #f5c518;
-      margin-bottom: 15px;
-      line-height: 1.4;
-    }
-    
-    .article-meta {
-      display: flex;
-      justify-content: center;
-      gap: 30px;
-      flex-wrap: wrap;
-      margin-top: 15px;
-    }
-    
-    .meta-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      color: #aaa;
-      font-size: 14px;
-      background: rgba(255,255,255,0.05);
-      padding: 8px 15px;
-      border-radius: 20px;
-    }
-    
-    .meta-item i {
-      color: #f5c518;
-    }
-    
-    .article-thumbnail {
-      width: 100%;
-      max-height: 400px;
-      object-fit: cover;
-    }
-    
-    .article-content {
-      padding: 30px;
-    }
-    
-    .article-content h3 {
-      color: #f5c518;
-      font-size: 24px;
-      margin: 30px 0 15px 0;
-      border-right: 4px solid #f5c518;
-      padding-right: 15px;
-    }
-    
-    .article-content p {
-      margin-bottom: 15px;
-      color: #ccc;
-    }
-    
-    .article-content img {
-      display: block;
-      margin: 20px auto;
-    }
-    
-    .source-badge {
-      display: inline-block;
-      background: #f5c518;
-      color: #000;
-      padding: 5px 15px;
-      border-radius: 20px;
-      font-weight: bold;
-      font-size: 14px;
-      margin-top: 10px;
-    }
-    
-    .site-footer {
-      text-align: center;
-      padding: 30px;
-      background: #1a1a1a;
-      border-top: 1px solid #333;
-    }
-    
-    .site-footer p {
-      color: #aaa;
-      margin-bottom: 15px;
-    }
-    
-    .site-footer a {
-      display: inline-block;
-      background: #f5c518;
-      color: #000;
-      padding: 12px 30px;
-      border-radius: 8px;
-      text-decoration: none;
-      font-weight: bold;
-      transition: transform 0.3s, box-shadow 0.3s;
-    }
-    
-    .site-footer a:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 5px 20px rgba(245, 197, 24, 0.3);
-    }
-    
-    .disclaimer {
-      background: #1a1a1a;
-      border-right: 4px solid #f5c518;
-      padding: 15px;
-      margin: 20px 0;
-      border-radius: 5px;
-      color: #888;
-      font-size: 14px;
-    }
-    
-    @media (max-width: 768px) {
-      body { padding: 10px; }
-      .article-header { padding: 25px; }
-      .article-header h1 { font-size: 24px; }
-      .article-content { padding: 20px; }
-      .article-meta { gap: 15px; }
-    }
-  </style>
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
+            padding: 20px;
+            line-height: 1.7;
+            color: #1a1a2e;
+            min-height: 100vh;
+        }
+        
+        .article-card {
+            max-width: 880px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 24px;
+            overflow: hidden;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+            transition: transform 0.3s ease;
+        }
+        
+        .article-inner {
+            padding: 40px 48px;
+        }
+        
+        .category-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
+            color: #4f46e5;
+            font-size: 0.8rem;
+            font-weight: 600;
+            padding: 6px 16px;
+            border-radius: 30px;
+            margin-bottom: 20px;
+            letter-spacing: 0.3px;
+        }
+        
+        .category-badge i {
+            font-size: 0.9rem;
+        }
+        
+        h1 {
+            font-size: 2.4rem;
+            font-weight: 800;
+            line-height: 1.25;
+            margin-bottom: 16px;
+            color: #0f172a;
+            letter-spacing: -0.5px;
+        }
+        
+        .article-meta {
+            display: flex;
+            gap: 24px;
+            font-size: 0.88rem;
+            color: #64748b;
+            margin: 20px 0 28px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #f1f5f9;
+            flex-wrap: wrap;
+        }
+        
+        .article-meta span {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .article-meta i {
+            color: #6366f1;
+            font-size: 0.9rem;
+        }
+        
+        .featured-image-wrapper {
+            position: relative;
+            margin: 24px 0 32px;
+            border-radius: 20px;
+            overflow: hidden;
+            background: #f8fafc;
+        }
+        
+        .featured-image-wrapper img {
+            width: 100%;
+            display: block;
+            aspect-ratio: 16/9;
+            object-fit: cover;
+            transition: transform 0.5s ease;
+        }
+        
+        .featured-image-wrapper:hover img {
+            transform: scale(1.02);
+        }
+        
+        .article-content {
+            color: #334155;
+        }
+        
+        .article-content h2 {
+            font-size: 1.6rem;
+            font-weight: 700;
+            margin: 32px 0 16px;
+            padding-left: 14px;
+            border-left: 4px solid #6366f1;
+            color: #1e293b;
+        }
+        
+        .article-content h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin: 24px 0 12px;
+            color: #334155;
+        }
+        
+        .article-content p {
+            margin-bottom: 1.2rem;
+            line-height: 1.8;
+            color: #475569;
+        }
+        
+        .article-content img {
+            width: 100%;
+            max-width: 800px;
+            height: auto;
+            aspect-ratio: 16/9;
+            object-fit: cover;
+            border-radius: 16px;
+            margin: 28px auto;
+            display: block;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+        }
+        
+        .highlight-box {
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border-left: 4px solid #0ea5e9;
+            padding: 20px 24px;
+            border-radius: 16px;
+            margin: 28px 0;
+        }
+        
+        .highlight-box strong {
+            color: #0284c7;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 14px;
+            font-size: 1.1rem;
+        }
+        
+        .highlight-box ul {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .highlight-box ul li {
+            padding: 6px 0;
+            color: #475569;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .highlight-box ul li:before {
+            content: "▸";
+            color: #0ea5e9;
+            font-weight: bold;
+        }
+        
+        .faq-section {
+            background: #f8fafc;
+            border-radius: 20px;
+            padding: 28px;
+            margin: 36px 0 20px;
+            border: 1px solid #e2e8f0;
+        }
+        
+        .faq-section h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            color: #1e293b;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border: none;
+            padding: 0;
+        }
+        
+        .faq-item {
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        .faq-item:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+        
+        .faq-item strong {
+            display: block;
+            margin-bottom: 8px;
+            color: #1e293b;
+            font-size: 1rem;
+        }
+        
+        .faq-item p {
+            color: #64748b;
+            font-size: 0.95rem;
+        }
+        
+        .author-box {
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            border-radius: 20px;
+            padding: 22px;
+            margin: 36px 0 16px;
+            display: flex;
+            gap: 18px;
+            align-items: center;
+            border: 1px solid #e2e8f0;
+        }
+        
+        .author-avatar {
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            color: white;
+            flex-shrink: 0;
+        }
+        
+        .author-info h4 {
+            margin-bottom: 4px;
+            color: #1e293b;
+            font-size: 1.05rem;
+        }
+        
+        .author-info p {
+            font-size: 0.85rem;
+            color: #64748b;
+            margin: 0;
+        }
+        
+        .article-footer {
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 2px solid #f1f5f9;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        
+        .tags {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        
+        .tag {
+            background: #f1f5f9;
+            color: #64748b;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.78rem;
+            font-weight: 500;
+        }
+        
+        .copyright {
+            font-size: 0.8rem;
+            color: #94a3b8;
+        }
+        
+        @media (max-width: 768px) {
+            body {
+                padding: 12px;
+            }
+            
+            .article-inner {
+                padding: 24px 20px;
+            }
+            
+            h1 {
+                font-size: 1.7rem;
+            }
+            
+            .article-meta {
+                gap: 12px;
+                font-size: 0.8rem;
+            }
+            
+            .article-content h2 {
+                font-size: 1.3rem;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .article-inner {
+                padding: 18px 14px;
+            }
+            
+            h1 {
+                font-size: 1.4rem;
+            }
+        }
+    </style>
 </head>
 <body>
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "Article",
-    "headline": "${reviewInfo.title}",
-    "description": "مراجعة شاملة ${reviewInfo.title} - المواصفات، المميزات، العيوب وكل ما تحتاج معرفته",
-    "image": "${reviewInfo.thumbnail || ''}",
-    "datePublished": "${reviewInfo.date}",
-    "publisher": {
-      "@type": "Organization",
-      "name": "${SETTINGS.siteName}",
-      "url": "${SETTINGS.siteUrl}"
-    },
-    "author": {
-      "@type": "Organization",
-      "name": "${SETTINGS.siteName}"
-    }
-  }
-  </script>
-
-  <div class="article-container">
-    <div class="article-header">
-      <h1>📱 ${reviewInfo.title}</h1>
-      <div class="article-meta">
-        <span class="meta-item"><i class="far fa-calendar-alt"></i> ${reviewInfo.date}</span>
-        <span class="meta-item"><i class="far fa-comments"></i> ${reviewInfo.comments} تعليق</span>
-        <span class="meta-item"><i class="fas fa-tag"></i> مراجعة هاتف</span>
-      </div>
-      <div class="source-badge">المصدر: GSMArena</div>
+    <div class="article-card">
+        <div class="article-inner">
+            <div class="category-badge">
+                <i class="fas ${categoryIcon}"></i> ${article.category}
+            </div>
+            
+            <h1>${article.title}</h1>
+            
+            <div class="article-meta">
+                <span><i class="far fa-calendar-alt"></i> ${formattedDate}</span>
+                <span><i class="far fa-user"></i> ${SETTINGS.authorName}</span>
+                <span><i class="far fa-clock"></i> ${readTime}</span>
+            </div>
+            
+            ${article.image ? `
+            <div class="featured-image-wrapper">
+                <img src="${article.image}" alt="${article.title}" loading="eager">
+            </div>` : ''}
+            
+            <div class="article-content">
+                ${articleContent}
+                
+                <div class="highlight-box">
+                    <strong><i class="fas fa-lightbulb"></i> Key Highlights</strong>
+                    <ul>
+                        <li>Comprehensive analysis and detailed breakdown</li>
+                        <li>Latest information and expert insights</li>
+                        <li>Everything you need to know about ${article.title.split(' ').slice(0, 5).join(' ')}</li>
+                    </ul>
+                </div>
+                
+                ${faqs.length > 0 ? `
+                <div class="faq-section">
+                    <h2><i class="fas fa-question-circle" style="color:#6366f1;"></i> Frequently Asked Questions</h2>
+                    ${faqs.map(faq => `
+                    <div class="faq-item">
+                        <strong>Q: ${faq.question}</strong>
+                        <p>A: ${faq.answer}</p>
+                    </div>`).join('')}
+                </div>` : ''}
+            </div>
+            
+            <div class="author-box">
+                <div class="author-avatar">
+                    <i class="fas fa-chalkboard-user"></i>
+                </div>
+                <div class="author-info">
+                    <h4>${SETTINGS.authorName}</h4>
+                    <p>${SETTINGS.authorDescription}</p>
+                </div>
+            </div>
+            
+            <div class="article-footer">
+                <div class="tags">
+                    <span class="tag">${article.category}</span>
+                    <span class="tag">Tech</span>
+                    <span class="tag">Analysis</span>
+                </div>
+                <div class="copyright">
+                    <i class="far fa-copyright"></i> ${SETTINGS.authorName} ${new Date().getFullYear()}
+                </div>
+            </div>
+        </div>
     </div>
-    
-    ${reviewInfo.thumbnail ? `<img class="article-thumbnail" src="${reviewInfo.thumbnail}" alt="${reviewInfo.title}" loading="lazy">` : ''}
-    
-    <div class="article-content">
-      <div class="disclaimer">
-        <i class="fas fa-info-circle"></i> 
-        هذه المراجعة منقولة من موقع GSMArena المتخصص في مراجعات الهواتف. نقدمها لكم مترجمة وبتنسيق مميز من ${SETTINGS.siteName}.
-      </div>
-      ${articleContent}
-    </div>
-    
-    <div class="site-footer">
-      <p>
-        <i class="fas fa-sync-alt"></i> 
-        يتم تحديث المحتوى بشكل دوري | جميع الحقوق محفوظة © ${new Date().getFullYear()}
-      </p>
-      <a href="${SETTINGS.siteUrl}" target="_blank" rel="noopener">
-        <i class="fas fa-external-link-alt"></i> زيارة موقع ${SETTINGS.siteName} للمزيد من المراجعات
-      </a>
-    </div>
-  </div>
 </body>
 </html>`;
     }
 
-    // ===== الحصول على Access Token مع معالجة أفضل للأخطاء =====
+    // ===== الحصول على Access Token =====
     async getAccessToken() {
         try {
             console.log('🔑 جاري الحصول على رمز الوصول...');
@@ -399,22 +867,10 @@ class AutoPublisher {
             console.log('✅ تم الحصول على رمز الوصول بنجاح');
             return response.data.access_token;
         } catch (error) {
-            console.error('❌ فشل الحصول على access token:');
+            console.error('❌ فشل الحصول على access token:', error.message);
             if (error.response) {
                 console.error('   الحالة:', error.response.status);
-                console.error('   الرسالة:', error.response.data);
-                
-                if (error.response.status === 400) {
-                    console.error('\n⚠️ يبدو أن refresh token منتهي الصلاحية أو غير صالح.');
-                    console.error('يجب عليك:');
-                    console.error('1. الذهاب إلى: https://console.cloud.google.com/apis/credentials');
-                    console.error('2. تفعيل Blogger API v3');
-                    console.error('3. إنشاء OAuth 2.0 Client ID جديد');
-                    console.error('4. استخدام الرابط التالي للحصول على refresh token جديد:');
-                    console.error(`   https://accounts.google.com/o/oauth2/auth?client_id=${BLOGGER_CONFIG.clientId}&redirect_uri=urn:ietf:wg:oauth:2.0:oob&scope=https://www.googleapis.com/auth/blogger&response_type=code`);
-                }
-            } else {
-                console.error('   الخطأ:', error.message);
+                console.error('   الرسالة:', JSON.stringify(error.response.data, null, 2));
             }
             throw error;
         }
@@ -433,48 +889,32 @@ class AutoPublisher {
                 }
             );
             console.log(`✅ تم التحقق من المدونة: ${response.data.name}`);
-            console.log(`   الوصف: ${response.data.description || 'لا يوجد وصف'}`);
-            console.log(`   عدد المنشورات: ${response.data.posts.totalItems}`);
             return true;
         } catch (error) {
-            console.error('❌ فشل التحقق من المدونة:');
+            console.error('❌ فشل التحقق من المدونة:', error.message);
             if (error.response) {
                 console.error('   الحالة:', error.response.status);
-                console.error('   الرسالة:', error.response.data);
-                
-                if (error.response.status === 403) {
-                    console.error('\n⚠️ ليس لديك صلاحية للنشر في هذه المدونة.');
-                    console.error('تأكد من:');
-                    console.error('1. أنك استخدمت نفس حساب Google المالك للمدونة عند إنشاء التطبيق');
-                    console.error('2. أنك منحت صلاحية Blogger API كاملة');
-                    console.error('3. أن Blog ID صحيح');
-                } else if (error.response.status === 404) {
-                    console.error('\n⚠️ المدونة غير موجودة. تأكد من Blog ID.');
-                }
             }
             return false;
         }
     }
 
     // ===== النشر على بلوجر =====
-    async publishToBlogger(postTitle, postContent) {
+    async publishToBlogger(postTitle, postContent, labels) {
         try {
-            // 1. الحصول على access token
             const accessToken = await this.getAccessToken();
             
-            // 2. التحقق من صلاحية المدونة
             const hasAccess = await this.verifyBlogAccess(accessToken);
             if (!hasAccess) {
                 throw new Error('لا توجد صلاحية للوصول إلى المدونة');
             }
             
-            // 3. نشر المقال
             console.log('📝 جاري نشر المقال...');
             const postData = {
                 kind: 'blogger#post',
                 title: postTitle,
                 content: postContent,
-                labels: ['مراجعات', 'GSMArena', 'هواتف', 'تقنية', 'ريفيو']
+                labels: labels || ['Tech', 'News', 'Analysis']
             };
 
             const response = await axios.post(
@@ -490,7 +930,6 @@ class AutoPublisher {
 
             console.log('✅ تم النشر بنجاح!');
             console.log(`🔗 رابط المقال: ${response.data.url}`);
-            console.log(`🆔 معرف المقال: ${response.data.id}`);
             
             return { 
                 success: true, 
@@ -504,21 +943,6 @@ class AutoPublisher {
             if (error.response) {
                 console.error('   الحالة:', error.response.status);
                 console.error('   الرسالة:', JSON.stringify(error.response.data, null, 2));
-                
-                // اقتراحات للحل
-                switch (error.response.status) {
-                    case 401:
-                        console.error('\n💡 الحل: تحتاج إلى refresh token جديد');
-                        console.error('استخدم الرابط التالي:');
-                        console.error(`https://accounts.google.com/o/oauth2/auth?client_id=${BLOGGER_CONFIG.clientId}&redirect_uri=urn:ietf:wg:oauth:2.0:oob&scope=https://www.googleapis.com/auth/blogger&response_type=code`);
-                        break;
-                    case 403:
-                        console.error('\n💡 الحل: تأكد من الصلاحيات التالية:');
-                        console.error('1. حساب Google المستخدم هو مالك المدونة');
-                        console.error('2. تم تفعيل Blogger API في Google Cloud Console');
-                        console.error('3. تم منح صلاحية https://www.googleapis.com/auth/blogger');
-                        break;
-                }
             } else {
                 console.error('   الخطأ:', error.message);
             }
@@ -531,7 +955,7 @@ class AutoPublisher {
     }
 
     // ===== حفظ نسخة محلية =====
-    async saveLocalBackup(title, content) {
+    async saveLocalBackup(title, content, category) {
         try {
             await fs.ensureDir(SETTINGS.postsDir);
             
@@ -539,9 +963,11 @@ class AutoPublisher {
             const safeTitle = title
                 .replace(/[<>:"/\\|?*]/g, '')
                 .replace(/\s+/g, '_')
-                .substring(0, 80);
-            const fileName = `${SETTINGS.postsDir}/${date}_${safeTitle}.html`;
+                .substring(0, 60);
+            const categoryDir = path.join(SETTINGS.postsDir, category.toLowerCase());
+            await fs.ensureDir(categoryDir);
             
+            const fileName = path.join(categoryDir, `${date}_${safeTitle}.html`);
             await fs.writeFile(fileName, content, 'utf8');
             console.log(`💾 تم حفظ نسخة محلية: ${fileName}`);
             return fileName;
@@ -553,90 +979,112 @@ class AutoPublisher {
 
     // ===== التشغيل الرئيسي =====
     async run() {
-        console.log('\n' + '='.repeat(60));
-        console.log('🚀 نظام النشر التلقائي من GSMArena');
-        console.log('='.repeat(60));
-        console.log(`📅 التاريخ: ${new Date().toLocaleString('ar-SA')}`);
-        console.log(`📊 المقالات المنشورة سابقاً: ${this.state.publishedArticles.length}`);
-        console.log('='.repeat(60));
+        console.log('\n' + '='.repeat(70));
+        console.log('🚀 نظام النشر التلقائي من GSMArena - الإصدار المحسن');
+        console.log('='.repeat(70));
+        console.log(`📅 التاريخ: ${new Date().toLocaleString('en-US')}`);
+        console.log(`📊 المقالات المنشورة سابقاً: ${this.state.publishedUrls.length}`);
+        console.log('='.repeat(70));
         
         try {
-            // 1. استخراج أحدث مقال
-            const reviewInfo = await this.getLatestReview();
+            // 1. استخراج أحدث مقال من كل قسم
+            const articles = await this.getLatestArticles();
             
-            console.log('\n' + '-'.repeat(40));
-            console.log('📋 تفاصيل المقال:');
-            console.log(`   📱 العنوان: ${reviewInfo.title}`);
-            console.log(`   🔗 الرابط: ${reviewInfo.link}`);
-            console.log(`   📅 التاريخ: ${reviewInfo.date}`);
-            console.log(`   💬 التعليقات: ${reviewInfo.comments}`);
-            if (reviewInfo.thumbnail) {
-                console.log(`   🖼️ الصورة: ${reviewInfo.thumbnail.substring(0, 60)}...`);
-            }
-            console.log('-'.repeat(40));
-
-            // 2. التحقق من أن المقال لم يُنشر مسبقاً
-            if (this.state.publishedArticles.includes(reviewInfo.link)) {
-                console.log('\n⚠️ هذا المقال تم نشره مسبقاً!');
-                console.log(`   📅 الرابط: ${reviewInfo.link}`);
-                console.log('   🛑 توقف لمنع التكرار.');
+            if (articles.length === 0) {
+                console.log('\n⚠️ لم يتم العثور على مقالات جديدة.');
                 return;
             }
-
-            // 3. استخراج محتوى المقال
-            console.log('\n📄 جاري استخراج محتوى المقال...');
-            const articleContent = await this.extractArticleContent(reviewInfo.link);
-            console.log(`✅ تم استخراج ${articleContent.length} حرف من المحتوى`);
-
-            // 4. توليد HTML المنشور
-            console.log('\n🛠️ جاري توليد HTML المنشور...');
-            const postHtml = this.generatePostHtml(reviewInfo, articleContent);
-            console.log('✅ تم توليد HTML');
-
-            // 5. حفظ نسخة محلية احتياطية
-            console.log('\n💾 جاري حفظ نسخة محلية...');
-            await this.saveLocalBackup(reviewInfo.title, postHtml);
-
-            // 6. النشر على بلوجر
-            console.log('\n📤 جاري النشر على بلوجر...');
-            const postTitle = `📱 ${reviewInfo.title} - مراجعة شاملة | ${reviewInfo.date}`;
-            const publishResult = await this.publishToBlogger(postTitle, postHtml);
-
-            // 7. تحديث الحالة
-            if (publishResult.success) {
-                this.state.publishedArticles.push(reviewInfo.link);
-                this.saveState();
-                
-                console.log('\n' + '='.repeat(60));
-                console.log('🎉🎉🎉 تم نشر المقال بنجاح! 🎉🎉🎉');
-                console.log('='.repeat(60));
-                console.log(`📱 العنوان: ${reviewInfo.title}`);
-                console.log(`🔗 رابط بلوجر: ${publishResult.url}`);
-                console.log(`🆔 معرف المنشور: ${publishResult.postId}`);
-                console.log(`📅 التاريخ: ${reviewInfo.date}`);
-                console.log(`💬 التعليقات: ${reviewInfo.comments}`);
-                console.log(`📊 إجمالي المقالات المنشورة: ${this.state.publishedArticles.length}`);
-                console.log('='.repeat(60));
-            } else {
-                console.log('\n' + '='.repeat(60));
-                console.log('⚠️ فشل النشر على بلوجر');
-                console.log('='.repeat(60));
-                console.log('✅ تم حفظ نسخة محلية للاستخدام اليدوي');
-                console.log('💡 يمكنك نشر الملف المحفوظ يدوياً من لوحة تحكم بلوجر');
-                console.log('='.repeat(60));
+            
+            // 2. فلترة المقالات غير المنشورة
+            const unpublishedArticles = articles.filter(article => 
+                !this.isArticlePublished(article.link, article.title)
+            );
+            
+            if (unpublishedArticles.length === 0) {
+                console.log('\n⚠️ جميع المقالات تم نشرها مسبقاً.');
+                return;
             }
-
+            
+            console.log(`\n📋 تم العثور على ${unpublishedArticles.length} مقالات جديدة للنشر`);
+            
+            // 3. نشر كل مقال            for (let i = 0; i < unpublishedArticles.length; i++) {
+                const article = unpublishedArticles[i];
+                
+                console.log(`\n${'─'.repeat(50)}`);
+                console.log(`📄 معالجة المقال ${i + 1}/${unpublishedArticles.length}`);
+                console.log(`   📱 العنوان: ${article.title}`);
+                console.log(`   📂 الفئة: ${article.category}`);
+                console.log(`   🔗 الرابط: ${article.link}`);
+                console.log(`   📅 التاريخ: ${article.date}`);
+                if (article.image) {
+                    console.log(`   🖼️ الصورة: ${article.image.substring(0, 60)}...`);
+                }
+                console.log(`${'─'.repeat(50)}`);
+                
+                try {
+                    // استخراج محتوى المقال
+                    console.log('\n📄 جاري استخراج محتوى المقال...');
+                    const articleContent = await this.extractArticleContent(article.link);
+                    console.log(`✅ تم استخراج المحتوى (${articleContent.length} حرف)`);
+                    
+                    // توليد HTML
+                    console.log('\n🛠️ جاري توليد HTML...');
+                    const postHtml = this.generatePostHtml(article, articleContent);
+                    console.log('✅ تم توليد HTML');
+                    
+                    // حفظ نسخة محلية
+                    console.log('\n💾 جاري حفظ نسخة محلية...');
+                    await this.saveLocalBackup(article.title, postHtml, article.category);
+                    
+                    // النشر على بلوجر
+                    console.log('\n📤 جاري النشر على بلوجر...');
+                    const postTitle = article.title;
+                    const labels = ['Tech', article.category, 'GSMArena', 'Analysis'];
+                    const publishResult = await this.publishToBlogger(postTitle, postHtml, labels);
+                    
+                    // تحديث الحالة
+                    if (publishResult.success) {
+                        this.state.publishedUrls.push(article.link);
+                        this.state.publishedTitles.push(article.title);
+                        this.saveState();
+                        
+                        console.log(`\n🎉 تم نشر "${article.title}" بنجاح!`);
+                        console.log(`🔗 ${publishResult.url}`);
+                    } else {
+                        console.log(`\n⚠️ فشل نشر "${article.title}"`);
+                        console.log('💡 تم حفظ نسخة محلية للنشر اليدوي');
+                    }
+                    
+                    // انتظار بين المقالات لتجنب rate limiting
+                    if (i < unpublishedArticles.length - 1) {
+                        console.log('\n⏳ انتظار 3 ثواني قبل المقال التالي...');
+                        await new Promise(resolve => setTimeout(resolve, 3000));
+                    }
+                    
+                } catch (error) {
+                    console.error(`\n❌ فشل معالجة المقال "${article.title}":`, error.message);
+                }
+            }
+            
+            // ملخص نهائي
+            console.log('\n' + '='.repeat(70));
+            console.log('📊 ملخص النشر:');
+            console.log(`   ✅ تم النشر بنجاح: ${this.newArticles.length}`);
+            console.log(`   📦 إجمالي المقالات المحفوظة: ${this.state.publishedUrls.length}`);
+            console.log(`   📁 النسخ المحلية محفوظة في: ${SETTINGS.postsDir}/`);
+            console.log('='.repeat(70));
+            
         } catch (error) {
-            console.error('\n' + '='.repeat(60));
+            console.error('\n' + '='.repeat(70));
             console.error('❌ فشل التشغيل:', error.message);
-            console.error('='.repeat(60));
+            console.error('='.repeat(70));
         }
     }
 }
 
 // ===== تشغيل التطبيق =====
-console.log('📢 بدء تشغيل مستخرج مراجعات GSMArena');
-console.log('⏰ الوقت:', new Date().toLocaleString('ar-SA'));
+console.log('📢 بدء تشغيل مستخرج مراجعات GSMArena - الإصدار المحسن');
+console.log('⏰ الوقت:', new Date().toLocaleString('en-US'));
 
 const publisher = new AutoPublisher();
 publisher.run().then(() => {
