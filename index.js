@@ -8,7 +8,7 @@ const BLOGGER_CONFIG = {
     blogId: '5107716259688743212',
     clientId: '763442957258-chsjm7n9chvae9roaj0vuprgdd61t9vc.apps.googleusercontent.com',
     clientSecret: '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',
-    refreshToken: '1//04-ucaHqT22MgCgYIARAAGAQSNwF-L9IrgpRydeAVTfdpWp41p2_gAYIkD1eSpxr-cJeMATwW3NBplACoMXhYXcFmI1ctY8wED0Q'
+    refreshToken: '1//04WXd8PiT1TPMCgYIARAAGAQSNwF-L9IrqUX_lS4aEX_cLlUBnZeqwkpgFSFch0fzvUxWz-g4HPe3u77980qeuOoJoq57lfXysho'
 };
 
 const SETTINGS = {
