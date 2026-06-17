@@ -1,6 +1,10 @@
 {
-  "publishedUrls": [],
-  "publishedTitles": [],
+  "publishedUrls": [
+    "https://www.gsmarena.com/sony_xperia_1_viii-review-2963.php"
+  ],
+  "publishedTitles": [
+    "Sony Xperia 1 VIII"
+  ],
   "processedUrls": [
     "https://www.gsmarena.com/forgot.php3",
     "https://www.gsmarena.com/reviewcomm-2968.php",
@@ -13,6 +17,6 @@
     "https://www.gsmarena.com/infinix_note_60_pro-review-2962.php",
     "https://www.gsmarena.com/honor_600-review-2964.php"
   ],
-  "lastRun": "2026-06-17T03:57:42.694Z",
+  "lastRun": "2026-06-17T10:52:42.277Z",
   "totalPublished": 0
 }
