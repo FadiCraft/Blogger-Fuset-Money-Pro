@@ -2,12 +2,14 @@
   "publishedUrls": [
     "https://www.gsmarena.com/sony_xperia_1_viii-review-2963.php",
     "https://www.gsmarena.com/vivo_x300_fe-review-2959.php",
-    "https://www.gsmarena.com/oneplus_nord_ce6-review-2961.php"
+    "https://www.gsmarena.com/oneplus_nord_ce6-review-2961.php",
+    "https://www.gsmarena.com/xiaomi_redmi_turbo_5-review-2970.php"
   ],
   "publishedTitles": [
     "Sony Xperia 1 VIII",
     "vivo X300 FE",
-    "OnePlus Nord CE6 hands-on"
+    "OnePlus Nord CE6 hands-on",
+    "Xiaomi Redmi Turbo 5 hands-on"
   ],
   "processedUrls": [
     "https://www.gsmarena.com/forgot.php3",
@@ -21,6 +23,6 @@
     "https://www.gsmarena.com/infinix_note_60_pro-review-2962.php",
     "https://www.gsmarena.com/honor_600-review-2964.php"
   ],
-  "lastRun": "2026-06-17T20:10:31.171Z",
+  "lastRun": "2026-06-18T10:18:44.430Z",
   "totalPublished": 0
 }
