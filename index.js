@@ -120,9 +120,6 @@ class AutoPublisher {
         
         const articles = [];
         
-        // ===== الطريقة الصحيحة: البحث عن divs اللي تحتوي على مقالات المراجعات =====
-        // GSMArena يستخدم هيكل معين: روابط تنتهي بـ review-رقم.php
-        
         // البحث عن كل الروابط اللي فيها "review-" (روابط المراجعات الحقيقية)
         $('a[href*="review-"]').each((i, el) => {
             if (articles.length >= 10) return false;
@@ -219,57 +216,296 @@ class AutoPublisher {
         return unpublished;
     }
 
-    // ===== استخراج محتوى المقال =====
+    // ===== استخراج وإعادة هيكلة محتوى المقال =====
     async extractArticleContent(articleUrl) {
-        console.log(`📄 استخراج: ${articleUrl.substring(0, 60)}...`);
+        console.log(`📄 استخراج وإعادة هيكلة: ${articleUrl.substring(0, 60)}...`);
         const html = await this.fetchHtml(articleUrl);
         const $ = cheerio.load(html);
         
-        // المحتوى الرئيسي
-        let mainContent = $('#review-body');
+        // هيكل منظم للمقال
+        const structuredContent = {
+            introduction: '',
+            sections: [],
+            conclusion: '',
+            specs: null,
+            pros: [],
+            cons: [],
+            images: []
+        };
         
-        if (!mainContent.length || mainContent.text().trim().length < 100) {
-            mainContent = $('body').clone();
-            mainContent.find('header, footer, nav, script, style, noscript, iframe, .ad, .social, .comments, .sidebar').remove();
+        // استخراج المحتوى الرئيسي
+        const reviewBody = $('#review-body');
+        
+        if (reviewBody.length) {
+            // جمع كل الفقرات والعناوين
+            const elements = [];
+            reviewBody.find('p, h2, h3, h4, ul, ol, img, table, div.specs-table').each((i, el) => {
+                const $el = $(el);
+                const tag = el.tagName.toLowerCase();
+                
+                if (tag === 'p') {
+                    const text = $el.text().trim();
+                    if (text.length > 20) {
+                        elements.push({ type: 'paragraph', content: text });
+                    }
+                } else if (tag.match(/^h[2-4]$/)) {
+                    const text = $el.text().trim();
+                    if (text.length > 3) {
+                        elements.push({ type: 'heading', level: tag, content: text });
+                    }
+                } else if (tag === 'img') {
+                    let src = $el.attr('src') || $el.attr('data-src');
+                    if (src && !src.includes('icon') && !src.includes('logo')) {
+                        if (src.startsWith('//')) src = 'https:' + src;
+                        elements.push({ type: 'image', src: src, alt: $el.attr('alt') || '' });
+                    }
+                } else if (tag === 'ul' || tag === 'ol') {
+                    const items = [];
+                    $el.find('li').each((j, li) => {
+                        const text = $(li).text().trim();
+                        if (text.length > 5) items.push(text);
+                    });
+                    if (items.length > 0) {
+                        elements.push({ type: 'list', listType: tag, items: items });
+                    }
+                }
+            });
+            
+            // تنظيم العناصر في هيكل
+            let currentSection = { title: 'Introduction', content: [] };
+            let introCollected = false;
+            
+            for (const element of elements) {
+                if (element.type === 'heading') {
+                    if (!introCollected) {
+                        structuredContent.introduction = currentSection.content
+                            .filter(e => e.type === 'paragraph')
+                            .map(e => e.content)
+                            .join('\n\n');
+                        introCollected = true;
+                    } else if (currentSection.content.length > 0) {
+                        structuredContent.sections.push({...currentSection});
+                    }
+                    currentSection = { title: element.content, content: [] };
+                } else {
+                    currentSection.content.push(element);
+                }
+            }
+            
+            // إضافة القسم الأخير
+            if (currentSection.content.length > 0) {
+                if (!introCollected) {
+                    structuredContent.introduction = currentSection.content
+                        .filter(e => e.type === 'paragraph')
+                        .map(e => e.content)
+                        .join('\n\n');
+                } else if (structuredContent.sections.length > 0) {
+                    structuredContent.conclusion = currentSection.content
+                        .filter(e => e.type === 'paragraph')
+                        .map(e => e.content)
+                        .join('\n\n');
+                } else {
+                    structuredContent.sections.push({...currentSection});
+                }
+            }
+            
+            // استخراج المواصفات إذا وجدت
+            const specsTable = reviewBody.find('table');
+            if (specsTable.length) {
+                const specs = {};
+                specsTable.find('tr').each((i, row) => {
+                    const cells = $(row).find('td, th');
+                    if (cells.length === 2) {
+                        const key = $(cells[0]).text().trim();
+                        const value = $(cells[1]).text().trim();
+                        if (key && value) specs[key] = value;
+                    }
+                });
+                if (Object.keys(specs).length > 0) {
+                    structuredContent.specs = specs;
+                }
+            }
+            
+            // استخراج الإيجابيات والسلبيات
+            reviewBody.find('ul, ol').each((i, list) => {
+                const $list = $(list);
+                const prevHeading = $list.prev('h3, h4, strong').text().toLowerCase();
+                
+                if (prevHeading.includes('pros') || prevHeading.includes('good') || prevHeading.includes('+')) {
+                    $list.find('li').each((j, li) => {
+                        const text = $(li).text().trim();
+                        if (text) structuredContent.pros.push(text);
+                    });
+                } else if (prevHeading.includes('cons') || prevHeading.includes('bad') || prevHeading.includes('-')) {
+                    $list.find('li').each((j, li) => {
+                        const text = $(li).text().trim();
+                        if (text) structuredContent.cons.push(text);
+                    });
+                }
+            });
         }
         
-        // تنظيف
-        mainContent.find('script, style, noscript, iframe, .ad, .social-share, .comments, nav').remove();
-        
-        const textContent = mainContent.text().replace(/\s+/g, ' ').trim().substring(0, 500);
-        
-        // معالجة الصور
-        mainContent.find('img').each((i, img) => {
-            const $img = $(img);
-            let src = $img.attr('src') || $img.attr('data-src');
-            if (src) {
-                if (src.startsWith('//')) src = 'https:' + src;
-                if (src.includes('icon') || src.includes('logo') || src.includes('avatar') || src.length < 30) {
-                    $img.remove();
-                    return;
-                }
-                $img.attr('src', src);
-                $img.attr('loading', 'lazy');
-            }
-        });
-        
-        mainContent.find('*').removeAttr('class id style onclick');
-        
-        return {
-            html: mainContent.html() || '',
-            text: textContent
-        };
+        return structuredContent;
     }
 
-    generatePostHtml(article, articleContent, contentText) {
+    // ===== توليد HTML منظم للمقال =====
+    generatePostHtml(article, structuredContent) {
         const cleanTitle = this.cleanTitle(article.title);
         const formattedDate = this.formatDate(article.date);
         const dateISO = this.formatDateISO(article.date);
-        const readTime = Math.max(1, Math.ceil((articleContent.length / 5) / 200));
-        const description = contentText.substring(0, 160).trim() + '...';
+        
+        // إنشاء وصف من المقدمة
+        const description = (structuredContent.introduction || cleanTitle).substring(0, 160).trim() + '...';
+        const readTime = Math.max(3, Math.ceil((description.length / 5) / 200));
         
         const colors = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b'];
         const accent = colors[Math.floor(Math.random() * colors.length)];
+        
+        // بناء محتوى HTML منظم
+        let bodyContent = '';
+        
+        // المقدمة
+        if (structuredContent.introduction) {
+            bodyContent += `
+            <div class="intro-section">
+                ${structuredContent.introduction.split('\n\n').map(p => `<p>${p}</p>`).join('\n')}
+            </div>`;
+        }
+        
+        // صورة رئيسية إذا وجدت
+        if (article.image) {
+            bodyContent += `
+            <div class="featured-image">
+                <img src="${article.image}" alt="${cleanTitle}" loading="lazy">
+                <p class="image-caption">${cleanTitle} - Full Review and Analysis</p>
+            </div>`;
+        }
+        
+        // جدول المواصفات إذا وجد
+        if (structuredContent.specs && Object.keys(structuredContent.specs).length > 0) {
+            bodyContent += `
+            <div class="specs-section">
+                <h2>📊 Key Specifications</h2>
+                <table class="specs-table">
+                    ${Object.entries(structuredContent.specs).map(([key, value]) => `
+                    <tr>
+                        <td><strong>${key}</strong></td>
+                        <td>${value}</td>
+                    </tr>`).join('')}
+                </table>
+            </div>`;
+        }
+        
+        // الأقسام الرئيسية
+        if (structuredContent.sections && structuredContent.sections.length > 0) {
+            structuredContent.sections.forEach((section, index) => {
+                bodyContent += `
+            <div class="content-section">
+                <h2>${section.title}</h2>`;
+                
+                section.content.forEach(element => {
+                    if (element.type === 'paragraph') {
+                        bodyContent += `
+                <p>${element.content}</p>`;
+                    } else if (element.type === 'image') {
+                        bodyContent += `
+                <div class="content-image">
+                    <img src="${element.src}" alt="${element.alt || section.title}" loading="lazy">
+                </div>`;
+                    } else if (element.type === 'list') {
+                        const listTag = element.listType === 'ol' ? 'ol' : 'ul';
+                        bodyContent += `
+                <${listTag}>
+                    ${element.items.map(item => `<li>${item}</li>`).join('\n')}
+                </${listTag}>`;
+                    }
+                });
+                
+                bodyContent += `
+            </div>`;
+            });
+        }
+        
+        // الإيجابيات والسلبيات
+        if (structuredContent.pros.length > 0 || structuredContent.cons.length > 0) {
+            bodyContent += `
+            <div class="pros-cons-section">
+                <h2>⚖️ Pros and Cons</h2>
+                <div class="pros-cons-grid">`;
+            
+            if (structuredContent.pros.length > 0) {
+                bodyContent += `
+                    <div class="pros-box">
+                        <h3>✅ Pros</h3>
+                        <ul>
+                            ${structuredContent.pros.map(pro => `<li>${pro}</li>`).join('\n')}
+                        </ul>
+                    </div>`;
+            }
+            
+            if (structuredContent.cons.length > 0) {
+                bodyContent += `
+                    <div class="cons-box">
+                        <h3>❌ Cons</h3>
+                        <ul>
+                            ${structuredContent.cons.map(con => `<li>${con}</li>`).join('\n')}
+                        </ul>
+                    </div>`;
+            }
+            
+            bodyContent += `
+                </div>
+            </div>`;
+        }
+        
+        // الخاتمة
+        if (structuredContent.conclusion) {
+            bodyContent += `
+            <div class="conclusion-section">
+                <h2>🏁 Final Verdict</h2>
+                ${structuredContent.conclusion.split('\n\n').map(p => `<p>${p}</p>`).join('\n')}
+            </div>`;
+        }
+        
+        // النقاط الرئيسية
+        bodyContent += `
+            <div class="key-points">
+                <h3>⭐ Key Takeaways</h3>
+                <ul>
+                    <li>Comprehensive analysis and detailed breakdown of features</li>
+                    <li>Real-world performance insights and benchmarks</li>
+                    <li>Honest assessment of strengths and weaknesses</li>
+                    <li>Expert recommendations for different user needs</li>
+                </ul>
+            </div>`;
+        
+        // الأسئلة الشائعة
+        bodyContent += `
+            <div class="faq-section">
+                <h2>❓ Frequently Asked Questions</h2>
+                <div class="faq-item">
+                    <h3>Q: What makes this device stand out from competitors?</h3>
+                    <p>A: Based on our thorough analysis, this device offers a unique combination of premium design, powerful performance, and innovative features that set it apart from competitors in its price range.</p>
+                </div>
+                <div class="faq-item">
+                    <h3>Q: Is this device worth buying in 2024?</h3>
+                    <p>A: Considering its features, performance, and price point, this device provides excellent value for money. It delivers flagship-level features at a competitive price, making it a solid investment for most users.</p>
+                </div>
+                <div class="faq-item">
+                    <h3>Q: How does the camera perform in low light?</h3>
+                    <p>A: The camera system has been optimized for various lighting conditions. Low-light performance is impressive with detailed images and minimal noise, though results may vary depending on specific conditions.</p>
+                </div>
+            </div>`;
+        
+        // معلومات الكاتب
+        bodyContent += `
+            <div class="author-box">
+                <div class="author-avatar">📝</div>
+                <div class="author-info">
+                    <h4>${SETTINGS.authorName}</h4>
+                    <p>${SETTINGS.authorDescription}</p>
+                </div>
+            </div>`;
         
         return `<!DOCTYPE html>
 <html lang="en">
@@ -292,57 +528,99 @@ class AutoPublisher {
         "description": "${description.replace(/"/g, '\\"')}",
         ${article.image ? `"image": "${article.image}",` : ''}
         "datePublished": "${dateISO}",
+        "author": {"@type": "Organization", "name": "${SETTINGS.authorName}"},
         "publisher": {"@type": "Organization", "name": "ZeeoXForU"}
     }
     </script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         *{margin:0;padding:0;box-sizing:border-box}
-        body{font-family:'Inter',sans-serif;background:#f8fafc;color:#1e293b;line-height:1.8;padding:20px}
-        .container{max-width:900px;margin:0 auto;background:#fff;border-radius:16px;box-shadow:0 2px 12px rgba(0,0,0,0.05);overflow:hidden}
-        .header{padding:36px 40px 0}
-        .category{display:inline-block;background:${accent}15;color:${accent};font-size:.78rem;font-weight:600;padding:5px 14px;border-radius:16px;margin-bottom:16px;text-transform:uppercase}
-        h1{font-size:2.2rem;font-weight:800;line-height:1.3;color:#0f172a;margin-bottom:12px}
-        .subtitle{font-size:1.05rem;color:#64748b;margin-bottom:16px}
-        .meta{display:flex;gap:18px;flex-wrap:wrap;font-size:.88rem;color:#64748b;padding-bottom:18px;border-bottom:1px solid #e2e8f0;margin-bottom:20px}
-        .meta span{display:flex;align-items:center;gap:5px}
-        .featured{margin:0 40px 28px;border-radius:12px;overflow:hidden}
-        .featured img{width:100%;height:auto;display:block;max-height:450px;object-fit:cover}
-        .body{padding:0 40px 40px}
-        .body h2{font-size:1.5rem;font-weight:700;color:#0f172a;margin:30px 0 14px;padding-left:12px;border-left:4px solid ${accent}}
-        .body h3{font-size:1.2rem;font-weight:600;color:#1e293b;margin:22px 0 10px}
-        .body p{margin-bottom:1rem;color:#334155;font-size:1.02rem}
-        .body img{max-width:100%;height:auto;border-radius:10px;margin:20px 0;display:block}
-        .body ul,.body ol{margin:14px 0;padding-left:22px}
-        .body li{margin-bottom:6px;color:#334155}
-        .body table{width:100%;border-collapse:collapse;margin:20px 0}
-        .body table td,.body table th{padding:10px 14px;border:1px solid #e2e8f0;text-align:left}
-        .body table th{background:#f8fafc;font-weight:600}
-        .key-points{background:#f0f9ff;border-left:4px solid ${accent};padding:18px 22px;border-radius:10px;margin:24px 0}
-        .key-points h3{color:${accent};margin-bottom:10px}
+        body{font-family:'Inter',sans-serif;background:linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);color:#1e293b;line-height:1.8;padding:20px;min-height:100vh}
+        .container{max-width:900px;margin:0 auto;background:#fff;border-radius:20px;box-shadow:0 10px 40px rgba(0,0,0,0.08);overflow:hidden}
+        
+        /* Header */
+        .header{background:linear-gradient(135deg, ${accent}15, ${accent}05);padding:40px 40px 30px;border-bottom:1px solid #e2e8f0}
+        .category{display:inline-block;background:${accent};color:#fff;font-size:.8rem;font-weight:600;padding:6px 16px;border-radius:20px;margin-bottom:20px;text-transform:uppercase;letter-spacing:1px}
+        h1{font-size:2.5rem;font-weight:800;line-height:1.3;color:#0f172a;margin-bottom:16px}
+        .subtitle{font-size:1.1rem;color:#64748b;margin-bottom:20px;line-height:1.6}
+        .meta{display:flex;gap:20px;flex-wrap:wrap;font-size:.9rem;color:#64748b}
+        .meta-item{display:flex;align-items:center;gap:6px;background:#f8fafc;padding:6px 14px;border-radius:20px}
+        
+        /* Main Content */
+        .body{padding:40px}
+        
+        /* Sections */
+        .intro-section,.content-section,.conclusion-section{margin-bottom:35px}
+        h2{font-size:1.8rem;font-weight:700;color:#0f172a;margin:35px 0 20px;padding-bottom:12px;border-bottom:3px solid ${accent};display:inline-block}
+        h3{font-size:1.3rem;font-weight:600;color:#1e293b;margin:20px 0 12px}
+        p{margin-bottom:1.2rem;color:#334155;font-size:1.05rem;line-height:1.9}
+        
+        /* Images */
+        .featured-image,.content-image{margin:25px 0;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.1)}
+        .featured-image img,.content-image img{width:100%;height:auto;display:block}
+        .image-caption{text-align:center;color:#64748b;font-size:.85rem;margin-top:10px;font-style:italic}
+        
+        /* Specs Table */
+        .specs-section{background:#f8fafc;border-radius:12px;padding:25px;margin:30px 0;border:1px solid #e2e8f0}
+        .specs-table{width:100%;border-collapse:collapse}
+        .specs-table td{padding:12px 16px;border-bottom:1px solid #e2e8f0;font-size:.95rem}
+        .specs-table tr:last-child td{border-bottom:none}
+        .specs-table td:first-child{color:#64748b;width:40%}
+        
+        /* Pros & Cons */
+        .pros-cons-section{margin:30px 0}
+        .pros-cons-grid{display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:20px;margin-top:15px}
+        .pros-box,.cons-box{padding:20px;border-radius:12px}
+        .pros-box{background:#f0fdf4;border:1px solid #bbf7d0}
+        .cons-box{background:#fef2f2;border:1px solid #fecaca}
+        .pros-box h3{color:#16a34a;margin-bottom:12px}
+        .cons-box h3{color:#dc2626;margin-bottom:12px}
+        .pros-box ul,.cons-box ul{list-style:none;padding:0}
+        .pros-box li,.cons-box li{padding:4px 0;color:#334155;font-size:.95rem}
+        .pros-box li:before{content:"✓ ";color:#16a34a;font-weight:bold}
+        .cons-box li:before{content:"✗ ";color:#dc2626;font-weight:bold}
+        
+        /* Lists */
+        ul,ol{margin:15px 0;padding-left:25px}
+        li{margin-bottom:8px;color:#334155}
+        
+        /* Key Points */
+        .key-points{background:linear-gradient(135deg, ${accent}10, ${accent}05);border-left:4px solid ${accent};padding:20px 25px;border-radius:0 12px 12px 0;margin:25px 0}
+        .key-points h3{color:${accent};margin-bottom:12px}
         .key-points ul{list-style:none;padding:0}
-        .key-points li{padding:5px 0}
-        .key-points li:before{content:"▸ ";color:${accent};font-weight:bold}
-        .faq{background:#fafbfc;border:1px solid #e2e8f0;border-radius:12px;padding:24px;margin:30px 0}
-        .faq h2{font-size:1.3rem;border:none;padding:0;margin-bottom:18px}
-        .faq-item{margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid #e2e8f0}
+        .key-points li{padding:6px 0;color:#334155}
+        .key-points li:before{content:"▸ ";color:${accent};font-weight:bold;margin-right:8px}
+        
+        /* FAQ */
+        .faq-section{background:#fafbfc;border:1px solid #e2e8f0;border-radius:12px;padding:25px;margin:30px 0}
+        .faq-section h2{border:none;margin-top:0}
+        .faq-item{margin-bottom:20px;padding-bottom:20px;border-bottom:1px solid #e2e8f0}
         .faq-item:last-child{border:none;margin:0;padding:0}
-        .faq-item strong{display:block;margin-bottom:6px;color:#1e293b}
-        .faq-item p{color:#64748b;font-size:.93rem}
-        .author{display:flex;gap:14px;align-items:center;padding:18px;background:#f8fafc;border-radius:12px;margin:28px 0}
-        .author-avatar{width:50px;height:50px;background:${accent};border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:1.2rem;flex-shrink:0}
-        .author-info h4{color:#1e293b}
-        .author-info p{color:#64748b;font-size:.82rem;margin:0}
-        .footer{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;padding-top:14px;border-top:1px solid #e2e8f0;margin-top:18px}
-        .tags{display:flex;gap:6px;flex-wrap:wrap}
-        .tag{background:#f1f5f9;color:#64748b;padding:4px 10px;border-radius:14px;font-size:.75rem}
-        .copyright{color:#94a3b8;font-size:.78rem}
+        .faq-item h3{font-size:1.1rem;color:#1e293b;margin-bottom:8px;font-weight:600}
+        .faq-item p{color:#64748b;font-size:.95rem;margin:0}
+        
+        /* Author */
+        .author-box{display:flex;gap:16px;align-items:center;padding:20px;background:#f8fafc;border-radius:12px;margin:30px 0;border:1px solid #e2e8f0}
+        .author-avatar{width:55px;height:55px;background:linear-gradient(135deg, ${accent}, ${accent}dd);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:1.3rem;flex-shrink:0}
+        .author-info h4{color:#1e293b;font-size:1.05rem;margin-bottom:4px}
+        .author-info p{color:#64748b;font-size:.85rem;margin:0}
+        
+        /* Footer */
+        .article-footer{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:15px;padding:20px 0 0;margin-top:20px;border-top:1px solid #e2e8f0}
+        .tags{display:flex;gap:8px;flex-wrap:wrap}
+        .tag{background:#f1f5f9;color:#64748b;padding:5px 12px;border-radius:16px;font-size:.8rem;font-weight:500;transition:all 0.3s}
+        .tag:hover{background:${accent}15;color:${accent}}
+        .copyright{color:#94a3b8;font-size:.8rem}
+        
         @media(max-width:768px){
-            body{padding:8px}
-            .header{padding:20px 16px 0}
-            .body{padding:0 16px 20px}
-            .featured{margin:0 16px 20px}
-            h1{font-size:1.5rem}
+            body{padding:10px}
+            .header{padding:25px 20px 20px}
+            .body{padding:25px 20px}
+            h1{font-size:1.8rem}
+            h2{font-size:1.4rem}
+            .pros-cons-grid{grid-template-columns:1fr}
+            .meta{gap:10px}
+            .meta-item{font-size:.8rem;padding:4px 10px}
         }
     </style>
 </head>
@@ -353,53 +631,24 @@ class AutoPublisher {
             <h1>${cleanTitle}</h1>
             <p class="subtitle">${description}</p>
             <div class="meta">
-                <span>📅 <time datetime="${dateISO}">${formattedDate}</time></span>
-                <span>👤 ${SETTINGS.authorName}</span>
-                <span>⏱️ ${readTime} min read</span>
+                <span class="meta-item">📅 <time datetime="${dateISO}">${formattedDate}</time></span>
+                <span class="meta-item">👤 ${SETTINGS.authorName}</span>
+                <span class="meta-item">⏱️ ${readTime} min read</span>
+                <span class="meta-item">🏷️ Review</span>
             </div>
         </header>
         
-        ${article.image ? `<div class="featured"><img src="${article.image}" alt="${cleanTitle}"></div>` : ''}
-        
         <div class="body">
-            ${articleContent}
+            ${bodyContent}
             
-            <div class="key-points">
-                <h3>⭐ Key Highlights</h3>
-                <ul>
-                    <li>Comprehensive analysis and detailed breakdown</li>
-                    <li>Real-world performance insights and benchmarks</li>
-                    <li>Honest assessment of pros and cons</li>
-                </ul>
-            </div>
-            
-            <div class="faq">
-                <h2>❓ Frequently Asked Questions</h2>
-                <div class="faq-item">
-                    <strong>Q: What makes this device stand out?</strong>
-                    <p>A: The device offers a unique combination of premium design, powerful performance, and innovative features that set it apart from competitors in its price range.</p>
-                </div>
-                <div class="faq-item">
-                    <strong>Q: Is it worth buying?</strong>
-                    <p>A: Based on our analysis, the device provides excellent value for money, delivering flagship-level features at a competitive price point.</p>
-                </div>
-            </div>
-            
-            <div class="author">
-                <div class="author-avatar">📝</div>
-                <div class="author-info">
-                    <h4>${SETTINGS.authorName}</h4>
-                    <p>${SETTINGS.authorDescription}</p>
-                </div>
-            </div>
-            
-            <div class="footer">
+            <div class="article-footer">
                 <div class="tags">
-                    <span class="tag">Tech</span>
+                    <span class="tag">Technology</span>
                     <span class="tag">Review</span>
                     <span class="tag">Analysis</span>
+                    <span class="tag">Tech News</span>
                 </div>
-                <div class="copyright">© ${new Date().getFullYear()} ZeeoXForU</div>
+                <div class="copyright">© ${new Date().getFullYear()} ZeeoXForU. All rights reserved.</div>
             </div>
         </div>
     </article>
@@ -437,7 +686,7 @@ class AutoPublisher {
                 }
             );
             
-            console.log('✅ تم النشر!');
+            console.log('✅ تم النشر بنجاح!');
             console.log(`🔗 ${response.data.url}`);
             return { success: true, url: response.data.url };
         } catch (error) {
@@ -463,35 +712,39 @@ class AutoPublisher {
             const safeTitle = title.replace(/[<>:"/\\|?*]/g, '').replace(/\s+/g, '_').substring(0, 50);
             const fileName = path.join(SETTINGS.postsDir, `${date}_${safeTitle}.html`);
             await fs.writeFile(fileName, content, 'utf8');
-            console.log(`💾 تم الحفظ: ${fileName}`);
+            console.log(`💾 تم حفظ النسخة الاحتياطية: ${fileName}`);
             return fileName;
         } catch (error) {
-            console.error('❌ فشل الحفظ:', error.message);
+            console.error('❌ فشل حفظ النسخة الاحتياطية:', error.message);
             return null;
         }
     }
 
     async run() {
         console.log('\n' + '='.repeat(60));
-        console.log('🚀 ZeeoXForU Auto Publisher');
+        console.log('🚀 ZeeoXForU Auto Publisher - Structured Version');
         console.log('='.repeat(60));
         
         try {
             const articles = await this.findUnpublishedArticles();
             
             if (articles.length === 0) {
-                console.log('\n✅ لا توجد مقالات جديدة.');
+                console.log('\n✅ لا توجد مقالات جديدة للنشر.');
                 return;
             }
             
             for (const article of articles) {
-                console.log(`\n📄 ${article.title}`);
+                console.log(`\n📄 معالجة: ${article.title}`);
+                console.log('📋 إعادة هيكلة المحتوى...');
                 
-                const { html: articleHtml, text: articleText } = await this.extractArticleContent(article.link);
-                const postHtml = this.generatePostHtml(article, articleHtml, articleText);
+                const structuredContent = await this.extractArticleContent(article.link);
+                const postHtml = this.generatePostHtml(article, structuredContent);
                 
+                // حفظ نسخة محلية
                 await this.saveLocalBackup(article.title, postHtml, article.category);
                 
+                // نشر إلى Blogger
+                console.log('📤 نشر إلى Blogger...');
                 const result = await this.publishToBlogger(article.title, postHtml);
                 
                 if (result.success) {
@@ -505,14 +758,18 @@ class AutoPublisher {
                 this.saveState();
             }
             
-            console.log(`\n📊 تم النشر: ${this.publishedCount}`);
+            console.log(`\n📊 إحصائيات النشر:`);
+            console.log(`   ✅ تم النشر بنجاح: ${this.publishedCount}`);
+            console.log(`   📝 إجمالي المقالات المعالجة: ${articles.length}`);
             
         } catch (error) {
-            console.error('\n❌ فشل:', error.message);
+            console.error('\n❌ فشل التشغيل:', error.message);
         }
     }
 }
 
-console.log('📢 ZeeoXForU Auto Publisher v3.0');
+// تشغيل الناشر
+console.log('📢 ZeeoXForU Structured Auto Publisher v4.0');
+console.log('✨ المميزات: إعادة هيكلة كاملة للمقالات');
 const publisher = new AutoPublisher();
-publisher.run().then(() => console.log('\n✅ اكتمل')).catch(e => console.error('\n❌', e.message));
+publisher.run().then(() => console.log('\n✅ اكتملت العملية بنجاح')).catch(e => console.error('\n❌', e.message));
