@@ -3,7 +3,7 @@ name: نشر يومي تلقائي
 on:
   schedule:
     # ينشر كل 6 ساعات
-    - cron: '0 */1 * * *'
+    - cron: '0 */2 * * *'
   workflow_dispatch:  # للتشغيل اليدوي
   push:
     branches: [ main ]
