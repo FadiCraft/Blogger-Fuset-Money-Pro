@@ -12,15 +12,13 @@ const BLOGGER_CONFIG = {
 };
 
 const SETTINGS = {
-    targetUrl: 'https://www.gsmarena.com/reviews.php3',
+    reviewsUrl: 'https://www.gsmarena.com/reviews.php3',
+    newsUrl: 'https://www.gsmarena.com/news.php3',
     baseUrl: 'https://www.gsmarena.com',
     stateFile: 'gsmarena_state.json',
     postsDir: 'posts_gsmarena',
-    siteName: 'ZeeoXForU',
-    siteUrl: 'https://www.zeexforu.com/',
-    authorName: 'ZeeoXForU Team',
-    authorDescription: 'Expert tech reviews, news, and in-depth analysis',
-    maxArticlesPerRun: 1
+    maxArticlesPerRun: 1, // سينشر مقال واحد جديد في كل تشغيلة
+    maxPagesToScan: 5     // كم صفحة يرجع لورا للبحث عن مقالات قديمة إذا الصفحة الأولى مكررة
 };
 
 class AutoPublisher {
@@ -70,15 +68,13 @@ class AutoPublisher {
         return res.data;
     }
 
-    isArticlePublished(url, title) {
-        if (this.state.publishedUrls.includes(url)) return true;
-        if (this.state.processedUrls.includes(url)) return true;
-        return false;
+    isArticlePublished(url) {
+        return this.state.publishedUrls.includes(url) || this.state.processedUrls.includes(url);
     }
 
     cleanTitle(title) {
         return title
-            .replace(/\s*(review|reviews|hands-on|hands on|preview|first look)\s*$/i, '')
+            .replace(/\s*(review|reviews|hands-on|hands on|preview|first look|news)\s*$/i, '')
             .replace(/\s+/g, ' ')
             .trim();
     }
@@ -89,159 +85,136 @@ class AutoPublisher {
             if (!isNaN(date.getTime())) {
                 return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
             }
-            const months = ['January', 'February', 'March', 'April', 'May', 'June',
-                          'July', 'August', 'September', 'October', 'November', 'December'];
-            const parts = dateString.split(' ');
-            if (parts.length === 3) {
-                const idx = months.findIndex(m => m.toLowerCase() === parts[1].toLowerCase());
-                if (idx >= 0) return `${months[idx]} ${parts[0]}, ${parts[2]}`;
-            }
             return dateString;
         } catch {
             return dateString;
         }
     }
 
-    formatDateISO(dateString) {
-        try {
-            const date = new Date(dateString);
-            if (!isNaN(date.getTime())) return date.toISOString().split('T')[0];
-            return new Date().toISOString().split('T')[0];
-        } catch {
-            return new Date().toISOString().split('T')[0];
-        }
-    }
-
-    // ===== البحث عن المقالات الحقيقية فقط =====
+    // ===== جلب المقالات مع ميزة الانتقال للصفحات الأقدم وعزل الأخبار/المراجعات =====
     async findUnpublishedArticles() {
-        console.log('🔍 جلب صفحة GSMArena...');
-        const html = await this.fetchHtml(SETTINGS.targetUrl);
-        const $ = cheerio.load(html);
-        
-        const articles = [];
-        
-        // البحث عن كل الروابط اللي فيها "review-" (روابط المراجعات الحقيقية)
-        $('a[href*="review-"]').each((i, el) => {
-            if (articles.length >= 10) return false;
+        const targets = [
+            { url: SETTINGS.reviewsUrl, type: 'Review', param: 'iPage' },
+            { url: SETTINGS.newsUrl, type: 'News', param: 'iPage' }
+        ];
+
+        const unpublishedArticles = [];
+
+        for (const target of targets) {
+            console.log(`\n🔍 فحص قسم: ${target.type}...`);
             
-            const $el = $(el);
-            let href = $el.attr('href');
-            
-            // تجاهل روابط التعليقات
-            if (href.includes('reviewcomm-')) return;
-            if (href.includes('comments')) return;
-            
-            // جعل الرابط كامل
-            if (!href.startsWith('http')) {
-                href = SETTINGS.baseUrl + (href.startsWith('/') ? '' : '/') + href;
-            }
-            
-            // البحث عن أقرب عنوان
-            let title = '';
-            let image = '';
-            
-            // جرب الوالد المباشر أو الجد
-            const parent = $el.parent().parent() || $el.parent();
-            
-            // العنوان: غالباً في h3 أو عنصر قريب
-            title = parent.find('h3, h2, strong, .title, [class*="title"]').first().text().trim();
-            
-            // إذا ما لقينا عنوان قريب، جرب النص داخل الرابط
-            if (!title || title.length < 5) {
-                title = $el.text().trim();
-            }
-            
-            // إذا ما زال ما فيه عنوان، جرب alt الصورة
-            if (!title || title.length < 5) {
-                title = $el.find('img').attr('alt') || parent.find('img').attr('alt') || '';
-            }
-            
-            // تجاهل العناوين القصيرة جداً أو الطويلة جداً
-            if (!title || title.length < 10 || title.length > 200) return;
-            
-            // تجاهل إذا كان العنوان أرقام فقط أو تواريخ
-            if (/^[\d\s./]+$/.test(title)) return;
-            
-            // تنظيف العنوان
-            title = title.replace(/\s+/g, ' ').trim();
-            
-            // الصورة
-            const img = $el.find('img').first() || parent.find('img').first();
-            if (img.length) {
-                image = img.attr('src') || img.attr('data-src') || '';
-                if (image && image.startsWith('//')) image = 'https:' + image;
-                else if (image && !image.startsWith('http')) image = 'https://' + image;
-            }
-            
-            // استخراج التاريخ من النص القريب
-            let date = '';
-            const dateEl = parent.find('[class*="time"], [class*="date"], time, .meta').first();
-            if (dateEl.length) {
-                date = dateEl.text().trim();
-            }
-            if (!date) {
-                date = new Date().toISOString().split('T')[0];
-            }
-            
-            // تجاهل التكرار
-            if (articles.find(a => a.link === href)) return;
-            
-            articles.push({
-                title: this.cleanTitle(title),
-                link: href,
-                image: image,
-                date: date,
-                category: 'Review'
-            });
-        });
-        
-        console.log(`📋 تم استخراج ${articles.length} مراجعة حقيقية`);
-        
-        // طباعة المقالات المستخرجة
-        articles.slice(0, 5).forEach((a, i) => {
-            console.log(`   ${i + 1}. "${a.title.substring(0, 70)}"`);
-            console.log(`      ${a.link.substring(0, 70)}`);
-        });
-        
-        // فلترة غير المنشورة
-        const unpublished = [];
-        for (const article of articles) {
-            if (!this.isArticlePublished(article.link, article.title)) {
-                unpublished.push(article);
-                if (unpublished.length >= SETTINGS.maxArticlesPerRun) break;
+            for (let page = 1; page <= SETTINGS.maxPagesToScan; page++) {
+                // بناء رابط الصفحة (مثال: reviews.php3?iPage=2)
+                const currentUrl = page === 1 ? target.url : `${target.url}?${target.param}=${page}`;
+                console.log(`📄 جلب الصفحة ${page}: ${currentUrl}`);
+                
+                try {
+                    const html = await this.fetchHtml(currentUrl);
+                    const $ = cheerio.load(html);
+                    const articlesOnPage = [];
+
+                    // تحديد الروابط بناءً على النوع (روابط المراجعات تحتوي review- وروابط الأخبار تحتوي news-)
+                    const selector = target.type === 'Review' ? 'a[href*="review-"]' : 'a[href*="news-"]';
+
+                    $(selector).each((i, el) => {
+                        const $el = $(el);
+                        let href = $el.attr('href');
+                        
+                        if (!href || href.includes('reviewcomm-') || href.includes('comments') || href.includes('newscomm-')) return;
+                        
+                        if (!href.startsWith('http')) {
+                            href = SETTINGS.baseUrl + (href.startsWith('/') ? '' : '/') + href;
+                        }
+                        
+                        const parent = $el.parent().parent() || $el.parent();
+                        let title = parent.find('h3, h2, strong, .title, [class*="title"]').first().text().trim();
+                        
+                        if (!title || title.length < 5) title = $el.text().trim();
+                        if (!title || title.length < 10 || title.length > 200 || /^[\d\s./]+$/.test(title)) return;
+
+                        let image = '';
+                        const img = $el.find('img').first() || parent.find('img').first();
+                        if (img.length) {
+                            image = img.attr('src') || img.attr('data-src') || '';
+                            if (image && image.startsWith('//')) image = 'https:' + image;
+                            else if (image && !image.startsWith('http')) image = 'https://' + image;
+                        }
+
+                        if (articlesOnPage.find(a => a.link === href)) return;
+
+                        articlesOnPage.push({
+                            title: this.cleanTitle(title),
+                            link: href,
+                            image: image,
+                            date: new Date().toISOString().split('T')[0],
+                            category: target.type
+                        });
+                    });
+
+                    // تصفية المقالات التي لم يتم نشرها من قبل في هذه الصفحة
+                    for (const article of articlesOnPage) {
+                        if (!this.isArticlePublished(article.link)) {
+                            unpublishedArticles.push(article);
+                            if (unpublishedArticles.length >= SETTINGS.maxArticlesPerRun) {
+                                return unpublishedArticles; // وجدنا العدد المطلوب، توقف واخرج فوراً للنشر
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.error(`❌ خطأ أثناء جلب الصفحة ${page}:`, err.message);
+                    break;
+                }
             }
         }
-        
-        console.log(`✅ مقالات جديدة: ${unpublished.length}`);
-        return unpublished;
+
+        return unpublishedArticles;
     }
 
-    // ===== استخراج محتوى المقال =====
+    // ===== استخراج محتوى المقال وتنظيفه تماماً من الإعلانات وعروض الأسعار =====
     async extractArticleContent(articleUrl) {
-        console.log(`📄 استخراج: ${articleUrl.substring(0, 60)}...`);
+        console.log(`📄 استخراج وتنظيف المحتوى من: ${articleUrl.substring(0, 60)}...`);
         const html = await this.fetchHtml(articleUrl);
         const $ = cheerio.load(html);
         
-        // المحتوى الرئيسي
-        let mainContent = $('#review-body');
+        // المحتوى الرئيسي للمراجعة أو الخبر
+        let mainContent = $('#review-body, .review-body, #news-body');
         
         if (!mainContent.length || mainContent.text().trim().length < 100) {
             mainContent = $('body').clone();
             mainContent.find('header, footer, nav, script, style, noscript, iframe, .ad, .social, .comments, .sidebar').remove();
         }
         
-        // تنظيف
-        mainContent.find('script, style, noscript, iframe, .ad, .social-share, .comments, nav').remove();
+        // --- حملة تنظيف شاملة للإعلانات وعروض الأسعار (Affiliate blocks) كما في الـ image_7261c2.png ---
+        mainContent.find('script, style, noscript, iframe, .ad, .social-share, .comments, nav, .sub-section, .pricing-box').remove();
+        
+        // تصفية عناصر الـ HTML التي تحتوي على نصوص ترويجية أو روابط شراء ومقارنة أسعار
+        mainContent.find('div, table, section, p, h2, h3, center').each((i, el) => {
+            const text = $(el).text().toLowerCase();
+            const idOrClass = ($(el).attr('id') || '') + ' ' + ($(el).attr('class') || '');
+            
+            if (
+                text.includes('best offers from our affiliate partners') || 
+                text.includes('get a commission from qualifying sales') ||
+                text.includes('show all prices') ||
+                idOrClass.includes('price') || 
+                idOrClass.includes('pricing') ||
+                idOrClass.includes('shop') ||
+                idOrClass.includes('store')
+            ) {
+                $(el).remove(); // حذف عنصر الإعلان فوراً
+            }
+        });
         
         const textContent = mainContent.text().replace(/\s+/g, ' ').trim().substring(0, 500);
         
-        // معالجة الصور
+        // معالجة وتنظيف الصور المتواجدة داخل المقال
         mainContent.find('img').each((i, img) => {
             const $img = $(img);
             let src = $img.attr('src') || $img.attr('data-src');
             if (src) {
                 if (src.startsWith('//')) src = 'https:' + src;
-                if (src.includes('icon') || src.includes('logo') || src.includes('avatar') || src.length < 30) {
+                // إزالة الأيقونات وشعارات المتاجر (مثل شعار أمازون المعروض بالصورة)
+                if (src.includes('icon') || src.includes('logo') || src.includes('avatar') || src.includes('amazon') || src.length < 30) {
                     $img.remove();
                     return;
                 }
@@ -263,7 +236,9 @@ class AutoPublisher {
         const readTime = Math.max(1, Math.ceil((articleContent.length / 5) / 200));
         const description = contentText.substring(0, 160).trim() + '...';
         
-        // استخدام تصميم مخصص لا يتعارض مع قالب بلوجر الأساسي
+        // تحديد لون التصنيف بناءً على نوع المقال
+        const badgeColor = article.category === 'News' ? '#0ea5e9' : '#6366f1';
+        
         return `
         <div class="zx-article-wrapper">
             <style>
@@ -272,7 +247,7 @@ class AutoPublisher {
                     line-height: 1.8;
                     color: #334155;
                     max-width: 100%;
-                    overflow: hidden; /* لمنع تداخل العناصر الطافية */
+                    overflow: hidden;
                 }
                 .zx-meta-bar {
                     display: flex;
@@ -293,7 +268,7 @@ class AutoPublisher {
                     font-weight: 600;
                 }
                 .zx-category-badge {
-                    background: #6366f1;
+                    background: ${badgeColor};
                     color: white;
                     padding: 3px 10px;
                     border-radius: 12px;
@@ -314,7 +289,6 @@ class AutoPublisher {
                 .zx-content p {
                     margin-bottom: 1.2rem;
                 }
-                /* تنظيف العناوين الداخلية والصور لتجنب التداخل */
                 .zx-content h2, .zx-content h3 {
                     color: #0f172a;
                     margin-top: 1.5em;
@@ -364,42 +338,11 @@ class AutoPublisher {
                 .zx-highlights li {
                     margin-bottom: 8px;
                 }
-                .zx-author-box {
-                    display: flex;
-                    align-items: center;
-                    gap: 15px;
-                    background: #f8fafc;
-                    padding: 20px;
-                    border-radius: 12px;
-                    margin-top: 40px;
-                    border: 1px solid #e2e8f0;
-                    clear: both;
-                }
-                .zx-author-avatar {
-                    font-size: 2rem;
-                    background: #e2e8f0;
-                    width: 60px;
-                    height: 60px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    border-radius: 50%;
-                }
-                .zx-author-info h4 {
-                    margin: 0 0 5px 0;
-                    color: #0f172a;
-                    font-size: 1.1rem;
-                    border: none;
-                }
-                .zx-author-info p {
-                    margin: 0;
-                    font-size: 0.9rem;
-                    color: #64748b;
-                }
             </style>
 
+            <!-- الميتا بار المحدثة بدون صندوق كاتب أو نصوص إضافية غير مرغوبة -->
             <div class="zx-meta-bar">
-                <div class="zx-meta-item zx-category-badge">📱 ${article.category}</div>
+                <div class="zx-meta-item zx-category-badge">${article.category === 'News' ? '📰 News' : '📱 Review'}</div>
                 <div class="zx-meta-item">⏱️ ${readTime} Min Read</div>
                 <div class="zx-meta-item">📅 ${formattedDate}</div>
             </div>
@@ -415,17 +358,9 @@ class AutoPublisher {
                 <h3>⭐ Key Highlights</h3>
                 <ul>
                     <li>Comprehensive analysis and detailed breakdown</li>
-                    <li>Real-world performance insights and benchmarks</li>
-                    <li>Honest assessment of pros and cons</li>
+                    <li>Real-world updates and official technology announcements</li>
+                    <li>Accurate details and up-to-date specifications</li>
                 </ul>
-            </div>
-            
-            <div class="zx-author-box">
-                <div class="zx-author-avatar">👨‍💻</div>
-                <div class="zx-author-info">
-                    <h4>${SETTINGS.authorName}</h4>
-                    <p>${SETTINGS.authorDescription}</p>
-                </div>
             </div>
         </div>`;
     }
@@ -440,7 +375,7 @@ class AutoPublisher {
         return response.data.access_token;
     }
 
-    async publishToBlogger(postTitle, postContent) {
+    async publishToBlogger(postTitle, postContent, category) {
         try {
             const accessToken = await this.getAccessToken();
             
@@ -450,7 +385,7 @@ class AutoPublisher {
                     kind: 'blogger#post',
                     title: postTitle,
                     content: postContent,
-                    labels: ['Tech', 'Review', 'ZeeoXForU']
+                    labels: ['Tech', category, 'ZeeoXForU']
                 },
                 {
                     headers: {
@@ -460,62 +395,52 @@ class AutoPublisher {
                 }
             );
             
-            console.log('✅ تم النشر!');
-            console.log(`🔗 ${response.data.url}`);
+            console.log('✅ تم النشر في بلوجر بنجاح!');
+            console.log(`🔗 رابط المقال: ${response.data.url}`);
             return { success: true, url: response.data.url };
         } catch (error) {
-            if (error.response?.status === 403) {
-                console.error('\n❌ صلاحية مرفوضة - تحتاج Refresh Token جديد');
-                console.error('💡 اتبع الخطوات التالية:');
-                console.error('1. افتح هذا الرابط في المتصفح:');
-                console.error(`https://accounts.google.com/o/oauth2/auth?client_id=${BLOGGER_CONFIG.clientId}&redirect_uri=urn:ietf:wg:oauth:2.0:oob&scope=https://www.googleapis.com/auth/blogger&response_type=code`);
-                console.error('2. اسمح بالوصول وانسخ الكود');
-                console.error('3. استخدم الكود لتحصل على refresh token جديد من:');
-                console.error('   curl -d "code=CODE&client_id=CLIENT_ID&client_secret=CLIENT_SECRET&redirect_uri=urn:ietf:wg:oauth:2.0:oob&grant_type=authorization_code" https://oauth2.googleapis.com/token');
-            } else {
-                console.error('❌ فشل النشر:', error.message);
-            }
+            console.error('❌ فشل النشر:', error.message);
             return { success: false, error: error.message };
         }
     }
 
-    async saveLocalBackup(title, content, category) {
+    async saveLocalBackup(title, content) {
         try {
             await fs.ensureDir(SETTINGS.postsDir);
             const date = new Date().toISOString().split('T')[0];
             const safeTitle = title.replace(/[<>:"/\\|?*]/g, '').replace(/\s+/g, '_').substring(0, 50);
             const fileName = path.join(SETTINGS.postsDir, `${date}_${safeTitle}.html`);
             await fs.writeFile(fileName, content, 'utf8');
-            console.log(`💾 تم الحفظ: ${fileName}`);
+            console.log(`💾 تم حفظ نسخة احتياطية محلية: ${fileName}`);
             return fileName;
         } catch (error) {
-            console.error('❌ فشل الحفظ:', error.message);
+            console.error('❌ فشل الحفظ المحلي:', error.message);
             return null;
         }
     }
 
     async run() {
         console.log('\n' + '='.repeat(60));
-        console.log('🚀 ZeeoXForU Auto Publisher');
+        console.log('🚀 ZeeoXForU Auto Publisher v4.0 (Smart Scan & Ad-Block)');
         console.log('='.repeat(60));
         
         try {
             const articles = await this.findUnpublishedArticles();
             
             if (articles.length === 0) {
-                console.log('\n✅ لا توجد مقالات جديدة.');
+                console.log('\n✅ تم فحص الصفحات العميقة ولا توجد أي مقالات جديدة كلياً في الموقع حالياً.');
                 return;
             }
             
             for (const article of articles) {
-                console.log(`\n📄 ${article.title}`);
+                console.log(`\n📄 معالجة مقال جديد مكتشف: [${article.category}] -> ${article.title}`);
                 
                 const { html: articleHtml, text: articleText } = await this.extractArticleContent(article.link);
                 const postHtml = this.generatePostHtml(article, articleHtml, articleText);
                 
-                await this.saveLocalBackup(article.title, postHtml, article.category);
+                await this.saveLocalBackup(article.title, postHtml);
                 
-                const result = await this.publishToBlogger(article.title, postHtml);
+                const result = await this.publishToBlogger(article.title, postHtml, article.category);
                 
                 if (result.success) {
                     this.state.publishedUrls.push(article.link);
@@ -528,14 +453,14 @@ class AutoPublisher {
                 this.saveState();
             }
             
-            console.log(`\n📊 تم النشر: ${this.publishedCount}`);
+            console.log(`\n📊 إجمالي المقالات المنشورة في هذه الدورة: ${this.publishedCount}`);
             
         } catch (error) {
-            console.error('\n❌ فشل:', error.message);
+            console.error('\n❌ فشل في التنفيذ:', error.message);
         }
     }
 }
 
-console.log('📢 ZeeoXForU Auto Publisher v3.0');
+console.log('📢 سكريبت النشر الذكي المحدث v4.0 جاهز...');
 const publisher = new AutoPublisher();
-publisher.run().then(() => console.log('\n✅ اكتمل')).catch(e => console.error('\n❌', e.message));
+publisher.run().then(() => console.log('\n✅ جولة الفحص والنشر اكتملت')).catch(e => console.error('\n❌ خطأ عام:', e.message));
