@@ -112,7 +112,8 @@
     "https://www.gsmarena.com/samsung_galaxy_s25_edge-review-2834.php",
     "https://www.gsmarena.com/motorola_edge_60-review-2831.php",
     "https://www.gsmarena.com/european_commission_forces_google_to_open_up_android_to_thirdparty_ai_assistants_share_search_data-news-73757.php",
-    "https://www.gsmarena.com/the_eu_adds_exemptions_to_its_removable_battery_rule_for_smartwatches_fitness_trackers_ear_buds-news-73746.php"
+    "https://www.gsmarena.com/the_eu_adds_exemptions_to_its_removable_battery_rule_for_smartwatches_fitness_trackers_ear_buds-news-73746.php",
+    "https://www.gsmarena.com/google_rebrands_notebooklm_as_gemini_notebook-news-73760.php"
   ],
   "publishedTitles": [
     "Motorola Razr Fold",
@@ -227,7 +228,8 @@
     "Samsung Galaxy S25 Edge",
     "Motorola Edge 60",
     "European Commission forces Google to open Android to third-party AI assistants, share search data",
-    "EU adds exemptions to its removable battery rule for smartwatches, fitness trackers, ear buds"
+    "EU adds exemptions to its removable battery rule for smartwatches, fitness trackers, ear buds",
+    "Google rebrands NotebookLM as Gemini Notebook"
   ],
   "processedUrls": [
     "https://www.gsmarena.com/xiaomi_redmi_turbo_5-review-2970.php",
@@ -270,5 +272,5 @@
     "https://www.gsmarena.com/oneplus_13s_handson-review-2838.php",
     "https://www.gsmarena.com/vivo_x200_ultra-review-2835.php"
   ],
-  "lastRun": "2026-07-16T19:01:06.226Z"
+  "lastRun": "2026-07-16T20:51:22.540Z"
 }
