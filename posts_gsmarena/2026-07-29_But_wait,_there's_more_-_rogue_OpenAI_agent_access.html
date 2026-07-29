@@ -1,0 +1,148 @@
+
+        <div class="zx-article-wrapper">
+            <style>
+                .zx-article-wrapper {
+                    font-family: 'Inter', 'Segoe UI', Tahoma, sans-serif;
+                    line-height: 1.8;
+                    color: #334155;
+                    max-width: 100%;
+                    overflow: hidden;
+                }
+                .zx-meta-bar {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 15px;
+                    margin-bottom: 25px;
+                    padding: 12px 15px;
+                    background: #f8fafc;
+                    border-radius: 8px;
+                    border: 1px solid #e2e8f0;
+                    font-size: 0.85rem;
+                    color: #64748b;
+                }
+                .zx-meta-item {
+                    display: flex;
+                    align-items: center;
+                    gap: 5px;
+                    font-weight: 600;
+                }
+                .zx-category-badge {
+                    background: #0ea5e9;
+                    color: white;
+                    padding: 3px 10px;
+                    border-radius: 12px;
+                    font-size: 0.8rem;
+                }
+                .zx-featured-image {
+                    width: 100%;
+                    max-height: 450px;
+                    object-fit: contain;
+                    border-radius: 12px;
+                    margin-bottom: 25px;
+                    background: #f1f5f9;
+                    display: block;
+                }
+                .zx-content {
+                    font-size: 1.05rem;
+                }
+                .zx-content p {
+                    margin-bottom: 1.2rem;
+                }
+                .zx-content h2, .zx-content h3 {
+                    color: #0f172a;
+                    margin-top: 1.5em;
+                    margin-bottom: 0.8em;
+                    border-bottom: 2px solid #f1f5f9;
+                    padding-bottom: 8px;
+                    clear: both; 
+                }
+                .zx-content img {
+                    max-width: 100%;
+                    height: auto !important;
+                    border-radius: 8px;
+                    margin: 20px auto;
+                    display: block;
+                    clear: both;
+                }
+                .zx-content table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin: 20px 0;
+                    font-size: 0.95rem;
+                }
+                .zx-content table th, .zx-content table td {
+                    border: 1px solid #e2e8f0;
+                    padding: 10px;
+                    text-align: left;
+                }
+                .zx-content table th {
+                    background: #f8fafc;
+                }
+                .zx-highlights {
+                    background: #f0fdf4;
+                    border-left: 4px solid #16a34a;
+                    padding: 18px 20px;
+                    border-radius: 0 8px 8px 0;
+                    margin: 35px 0;
+                }
+                .zx-highlights h3 {
+                    color: #16a34a;
+                    margin-top: 0;
+                    border: none;
+                }
+                .zx-highlights ul {
+                    margin: 0;
+                    padding-left: 20px;
+                }
+                .zx-highlights li {
+                    margin-bottom: 8px;
+                }
+            </style>
+
+            <!-- الميتا بار المحدثة بدون صندوق كاتب أو نصوص إضافية غير مرغوبة -->
+            <div class="zx-meta-bar">
+                <div class="zx-meta-item zx-category-badge">📰 News</div>
+                <div class="zx-meta-item">⏱️ 3 Min Read</div>
+                <div class="zx-meta-item">📅 July 29, 2026</div>
+            </div>
+
+            <img class="zx-featured-image" src="https://fdn.gsmarena.com/imgroot/news/26/07/openai-modal-hugging-face/-344x215/gsmarena_000.jpg" alt="But wait, there's more - rogue OpenAI agent accessed Modal before Hugging Face">
+
+            <div class="zx-content">
+                <p><strong>Earlier this month, a rogue OpenAI agent escaped its locked-down testing environment and hacked into Hugging Face, prompting backlash across the tech industry....</strong></p>
+                
+
+
+
+
+
+<p>Earlier this month, a rogue OpenAI agent escaped its locked-down testing environment and hacked into Hugging Face, prompting <a href="nvidia_microsoft_meta_and_others_form_open_secure_ai_alliance-news-73904.php">backlash across the tech industry</a>.</p>
+
+<p>But there's more to the story. Apparently, the rogue AI stopped by cloud computing company Modal Labs before it got to Hugging Face. And there's more still; apparently, the rogue AI then accessed Modal through one of its customers' exploits, and then used Modal Labs as a stepping stone to carry out its attacks on Hugging Face.</p>
+
+<p>OpenAI's rogue agent didn't hack Modal Labs; think of it as a burglar seeing an office building with a door left wide open. The AI simply walked in (exploited an exposed endpoint). The metaphorical door, in this case, gave the rogue AI access to a secure testing area hosted on Modal's network.</p>
+
+<p>Modal's customer had created an internet-accessible service with <b>no password or authentication</b>.</p>
+
+<img width="1200" height="800" src="https://fdn.gsmarena.com/imgroot/news/26/07/openai-modal-hugging-face/-1200/gsmarena_001.jpg" alt="But wait, there's more - rogue OpenAI agent accessed Modal before Hugging Face" loading="lazy">
+
+<p>From there, the rogue agent attacked Hugging Face, achieving platform-level access to its systems. OpenAI has now admitted that its rogue AI accessed <b>four different online accounts or services</b>, but didn't specify which (though we know of Modal Labs and Hugging Face).</p>
+
+<p>What's bad is that OpenAI apparently didn't notice right away. According to Reuters, OpenAI realized its AI agent escaped some days after the incident at a time when the FBI was already notified. OpenAI disputes parts of Reuters' reporting, but hasn't explained which exactly.</p>
+
+<p>So then, simply put, an OpenAI AI agent, designed to simulate a highly capable hacker, escaped its believed-to-be-locked environment (supposedly on its own whim), gained access to Modal Labs through a customer's exploit, then used its platform to attack and successfully hack Hugging Face (and accessed two other companies/services). And was subsequently thwarted by Chinese open-weight GLM 5.2, after leading US closed models were unable to stop it.</p>
+
+<p><a href="https://www.reuters.com/business/openais-rogue-agent-compromised-an-account-second-tech-firm-sources-say-2026-07-28/?utm_source=Twitter&amp;utm_medium=Social" target="_blank" rel="noopener noreferrer">Source</a></p>
+
+
+            </div>
+            
+            <div class="zx-highlights">
+                <h3>⭐ Key Highlights</h3>
+                <ul>
+                    <li>Comprehensive analysis and detailed breakdown</li>
+                    <li>Real-world updates and official technology announcements</li>
+                    <li>Accurate details and up-to-date specifications</li>
+                </ul>
+            </div>
+        </div>
